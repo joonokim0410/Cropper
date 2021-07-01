@@ -10,6 +10,46 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-i", "--input_dir", default="./")
 args = parser.parse_args()
 
+
+def resizeCropInfo(key, cropPos):
+    # Left
+    if key == 0x250000:
+        cropPos[2] -= 1
+        cropPos[0] += 2
+    # Up
+    elif key == 0x260000:
+        cropPos[3] -= 1
+        cropPos[1] += 2
+    # Right
+    elif key == 0x270000:
+        cropPos[0] -= 2
+        cropPos[2] += 1
+    # Down
+    elif key == 0x280000:
+        cropPos[1] -= 2
+        cropPos[3] += 1
+    # Num 4
+    elif key == 52:
+        cropPos[2] -= 1
+        cropPos[0] -= 1
+    # Num 8
+    elif key == 56:
+        cropPos[3] -= 1
+        cropPos[1] -= 1
+    # Num 6
+    elif key == 54:
+        cropPos[0] += 1
+        cropPos[2] += 1
+    # Num 2
+    elif key == 50:
+        cropPos[1] += 1
+        cropPos[3] += 1
+
+    if key > 0:
+        print(cropPos)
+
+    return cropPos
+    
 # cropdetect 에서 얻은 정보 => cv2로 그림 그리면서 confirm.
 
 # confirm 안되면 w:h:x:y 를 콘솔로 정정할 수 있게 만듦 => 다시 confirm 시도
@@ -45,50 +85,12 @@ def main():
 
     # play speed : 33ms / frame
     while True:
-        key = cv2.waitKeyEx(33)
-        # 27 : ESC
+        key = cv2.waitKeyEx(1)
+        # 27 == ESC
         if key == 27:
             break
-        # Left
-        elif key == 0x250000:
-            cropPos[2] -= 1
-            cropPos[0] += 2
-            print(cropPos)
-        # Up
-        elif key == 0x260000:
-            cropPos[3] -= 1
-            cropPos[1] += 2
-            print(cropPos)
-        # Right
-        elif key == 0x270000:
-            cropPos[0] -= 2
-            cropPos[2] += 1
-            print(cropPos)
-        # Down
-        elif key == 0x280000:
-            cropPos[1] -= 2
-            cropPos[3] += 1
-            print(cropPos)
-        # Num 4
-        elif key == 52:
-            cropPos[2] -= 1
-            cropPos[0] -= 1
-            print(cropPos)
-        # Num 8
-        elif key == 56:
-            cropPos[3] -= 1
-            cropPos[1] -= 1
-            print(cropPos)
-        # Num 6
-        elif key == 54:
-            cropPos[0] += 1
-            cropPos[2] += 1
-            print(cropPos)
-        # Num 2
-        elif key == 50:
-            cropPos[1] += 1
-            cropPos[3] += 1
-            print(cropPos)
+
+        resizeCropInfo(key, cropPos)
 
         frame_pos = capture.get(cv2.CAP_PROP_POS_FRAMES)
         frame_count = capture.get(cv2.CAP_PROP_FRAME_COUNT)
@@ -99,13 +101,30 @@ def main():
         ret, frame = capture.read()
         
         cv2.rectangle(frame, (cropPos[2],cropPos[3]), (cropPos[2] + cropPos[0],cropPos[3] + cropPos[1]), (0, 0, 255), thickness=1, lineType=cv2.LINE_8)
-        # cv2.rectangle(frame, (2,45), (720,431), (0, 0, 255), thickness=1, lineType=cv2.LINE_8)
+        # cv2.rectangle(frame, (4,43), (717,431), (0, 0, 255), thickness=1, lineType=cv2.LINE_8)
         cv2.imshow(f'{vid_name}', frame)
 
     capture.release()
     cv2.destroyAllWindows()
 
-    p = subprocess.Popen(["ffplay", "-i", fpath, "-vf", f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]}"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    target_width = 960
+    target_height = 540
+    # ffmpeg filter args
+    crop_arg = f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]},"
+    if (target_height / target_height) >= (cropPos[0] / cropPos[1]):
+        tmp_width = target_height * (cropPos[0] / cropPos[1])
+        scale_arg = f"scale=w={tmp_width}:h={target_height},"
+    else:
+        tmp_height = target_width * (cropPos[1] / cropPos[0])
+        scale_arg = f"scale=w={target_width}:h={tmp_height},"
+        
+    pad_arg = f"pad={target_width}:{target_height}:(ow-iw)/2:(ih-oh)/2,"
+    
+    if False:
+        p = subprocess.Popen(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg + "setsar=sar=1", "-y", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "15", "-preset", "medium", "tmp.mp4"])
+    else:
+        p = subprocess.Popen(["ffmpeg", "-t", "15", "-ss", "30", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg + "setsar=sar=1", "-y", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "15", "-preset", "medium", "tmp.mp4"])
+        
 
 if __name__ == "__main__":
     main()
