@@ -11,7 +11,6 @@ parser.add_argument("-i", "--input_dir", default="./")
 parser.add_argument("-s", "--scale", default="960:540")
 args = parser.parse_args()
 
-
 def resizeCropInfo(key, cropPos, frame_width, frame_height):
     def _IsOutOfBound(_cropPos):
         w, h, x, y = _cropPos
@@ -70,17 +69,25 @@ def resizeCropInfo(key, cropPos, frame_width, frame_height):
 def main():
     vid_paths = sorted(glob.glob(os.path.join(args.input_dir, '*.avi')))
     _scale = args.scale.split(":")
+    if len(_scale) != 2 :
+        print("Invalid target scale : ", args.scale)
+        return
+
     target_width, target_height = [int(x) for x in _scale]
     
-    if not (target_width > 0) and (target_height > 0) :
-        print("Invalid target scale : " + target_width + target_height)
+    if not ((target_width > 0) and (target_height > 0)):
+        print("Invalid target scale : ", args.scale)
+        return
+    else :
+        print("Input dir :", args.input_dir)
+        print("Target scale: ", args.scale)
 
     for fpath in vid_paths:
         vid_name = os.path.basename(fpath)[:-4]
         # Debugging
         fpath = "01. Group S - I Swear MV.avi"
 
-        print("File to detect crop: %s " % fpath)
+        print("File to detect crop: ", fpath)
         p = subprocess.Popen(["ffmpeg", "-ss", "30", "-i", fpath, "-vf", "cropdetect=limit=38:reset=30",
                              "-vframes", "1500", "-f", "null", "out.null"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         infos = p.stderr.read().decode('utf-8')
