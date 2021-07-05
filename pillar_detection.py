@@ -14,9 +14,11 @@ args = parser.parse_args()
 def resizeCropInfo(key, cropPos, frame_width, frame_height):
     def _IsOutOfBound(_cropPos):
         w, h, x, y = _cropPos
-        if (w + x) >= frame_width or (h + y) >= frame_height:
+        if (w + x) > frame_width or (h + y) > frame_height:
             return True
-        if not all([a > 0 for a in _cropPos]):
+        if not all([a >= 0 for a in [x, y]]):
+            return True
+        if not all([a >= 0 for a in [w, h]]):
             return True
     
     w, h, x, y = cropPos
@@ -85,11 +87,11 @@ def main():
     for fpath in vid_paths:
         vid_name = os.path.basename(fpath)[:-4]
         # Debugging
-        fpath = "01. Group S - I Swear MV.avi"
+        fpath = "01. In the sky - 블랙비트.avi"
 
         print("File to detect crop: ", fpath)
-        p = subprocess.Popen(["ffmpeg", "-ss", "30", "-i", fpath, "-vf", "cropdetect=limit=38:reset=30",
-                             "-vframes", "1500", "-f", "null", "out.null"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        p = subprocess.Popen(["ffmpeg", "-ss", "30", "-i", fpath, "-vf", "cropdetect=limit=38",
+                             "-vframes", "3000", "-f", "null", "out.null"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         infos = p.stderr.read().decode('utf-8')
         # print (infos)
         allCrops = re.findall("crop=\S+", infos)
@@ -138,14 +140,16 @@ def main():
 
         # ffmpeg filter args
         crop_arg = f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]},"
-        print(f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]},")
+
+        # Debugging
+        print(f"[debug] crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]}")
 
         if (target_height / target_height) >= (cropPos[0] / cropPos[1]):
-            tmp_width = target_height * (cropPos[0] / cropPos[1])
-            scale_arg = f"scale=w={tmp_width}:h={target_height},"
-        else:
             tmp_height = target_width * (cropPos[1] / cropPos[0])
             scale_arg = f"scale=w={target_width}:h={tmp_height},"
+        else:
+            tmp_width = target_height * (cropPos[0] / cropPos[1])
+            scale_arg = f"scale=w={tmp_width}:h={target_height},"
 
         pad_arg = f"pad={target_width}:{target_height}:(ow-iw)/2:(ih-oh)/2,"
 
@@ -159,8 +163,8 @@ def main():
                                  "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "15", "-preset", "medium", "-loglevel", "error", f"_{vid_name}_cropped.mp4"])
         print("Encoding Done.")
 
+        # debugging
         return
-
 
 if __name__ == "__main__":
     main()
