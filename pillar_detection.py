@@ -45,19 +45,19 @@ def resizeCropInfo(key, cropPos, frame_width, frame_height):
         h -= 2
     # Num 4 (Move left)
     elif key == ord('a') or key == ord('A'):
+        # w -= 1
         x -= 1
-        w -= 1
     # Num 6 (Move right)
     elif key == ord('d') or key == ord('D'):
-        w += 1
+        # w += 1
         x += 1
     # Num 8 (Move upward)
     elif key == ord('w') or key == ord('W'):
-        h -= 1
+        # h -= 1
         y -= 1
     # Num 2 (Move downward)
     elif key == ord('s') or key == ord('S'):
-        h += 1
+        # h += 1
         y += 1
     _cropPos = w, h, x, y
 
@@ -81,7 +81,7 @@ def main():
 
     for fpath in vid_grapped:
         # debugging
-        # fpath = "01. Group S - I Swear MV.avi"
+        # fpath = "01. TRAX - PARADOX MV.avi"
 
         vid_name = os.path.basename(fpath)[:-4]
 
@@ -109,7 +109,6 @@ def main():
             capture = cv2.VideoCapture(fpath)
             frame_width = capture.get(cv2.CAP_PROP_FRAME_WIDTH)
             frame_height = capture.get(cv2.CAP_PROP_FRAME_HEIGHT)
-            frame_count = capture.get(cv2.CAP_PROP_FRAME_COUNT)
             fps = capture.get(cv2.CAP_PROP_FPS)
             frame_pos = 0
             frame_count = 0
@@ -192,6 +191,13 @@ def main():
         capture.release()
         cv2.destroyAllWindows()
 
+        # Debugging
+        # cropPos[0] = 678
+        # cropPos[1] = 402
+        # cropPos[2] = 20
+        # cropPos[3] = 38
+        # pad_arg = ""
+
         # ffmpeg filter args
         crop_arg = f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]},"
         print(f"[CropInfo] (W : {cropPos[0]}), (H : {cropPos[1]}), (X : {cropPos[2]}), (Y : {cropPos[3]})")
@@ -199,6 +205,7 @@ def main():
         crop_ratio = cropPos[0] / cropPos[1]
         scale_arg = ""
 
+        # # Set padding argument
         if target_ratio < crop_ratio:
             offset = (9 * cropPos[0] - 16 * cropPos[1]) / 16
             if int(offset) % 2 != 0:
@@ -206,6 +213,7 @@ def main():
             tmp_height = cropPos[1] + offset
             # scale_arg = f"scale=w={cropPos[0]}:h={tmp_height},"
             pad_arg = f"pad={cropPos[0]}:{tmp_height}:(ow-iw)/2:(ih-oh)/2,"
+            print(f"[PadInfo] (W : {cropPos[0]}), (H : {tmp_height})")
         else:
             offset = (16 * cropPos[1] - 9 * cropPos[0]) / 9
             if int(offset) % 2 != 0:
@@ -213,7 +221,7 @@ def main():
             tmp_width = cropPos[0] + offset
             # scale_arg = f"scale=w={tmp_width}:h={cropPos[1]},"
             pad_arg = f"pad={tmp_width}:{cropPos[1]}:(ow-iw)/2:(ih-oh)/2,"
-
+            print(f"[PadInfo] (W : {tmp_width}), (H : {cropPos[1]})")
 
         print("Encoding \"%s\" ..." % vid_name)
 
