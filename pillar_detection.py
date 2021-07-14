@@ -9,6 +9,7 @@ import re
 import subprocess
 import argparse
 import copy
+import base64
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-i", "--input_dir", default="./", help="Input vid directory")
@@ -29,20 +30,20 @@ def resizeCropInfo(key, cropPos, frame_width, frame_height):
     w, h, x, y = cropPos
     # Left (Expand width)
     if key == ord('j') or key == ord('J'):
-        x -= 1
-        w += 2
+        x -= 2
+        w += 4
     # Right (Shrink width)
     elif key == ord('l') or key == ord('L'):
-        x += 1
-        w -= 2
+        x += 2
+        w -= 4
     # Up (Expand height)
     elif key == ord('i') or key == ord('I'):
-        y -= 1
-        h += 2
+        y -= 2
+        h += 4
     # Down (Shrink height)
     elif key == ord('k') or key == ord('K'):
-        y += 1
-        h -= 2
+        y += 2
+        h -= 4
     # Num 4 (Move left)
     elif key == ord('a') or key == ord('A'):
         # w -= 1
@@ -84,6 +85,7 @@ def main():
         # fpath = "01. TRAX - PARADOX MV.avi"
 
         vid_name = os.path.basename(fpath)[:-4]
+        # vid_name = vid_name.encode('utf-8').decode('cp949')
 
 
         print("File to detect crop: ", fpath)
@@ -125,15 +127,27 @@ def main():
                     cropPos[1] -= 1
                 else:
                     cropPos[1] += 1
+
+            # Crop Area Multiple of 4 check
+            if (cropPos[0] % 4) != 0 :
+                if (cropPos[0] + 2) >= frame_width:
+                    cropPos[0] -= 2
+                else:
+                    cropPos[0] += 2
+            if (cropPos[1] % 4) != 0 :
+                if (cropPos[1] + 2) >= frame_width:
+                    cropPos[1] -= 2
+                else:
+                    cropPos[1] += 2
     
-            print("Target Ratio : %.5f" %target_ratio)
+            print("Target Ratio : %.7f" %target_ratio)
             print("Input dir :", args.input_dir)
 
             key = None
             isPaused = False
             pausedFrame = None
             frame = None
-            cv2.namedWindow(f'{vid_name}')
+            cv2.namedWindow(f'{vid_name}', cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
             while True:
                 key = cv2.waitKeyEx(10)
 
@@ -165,6 +179,9 @@ def main():
                     elif key == ord('q') or key == ord('Q'):
                         if not isPaused:
                             capture.set(cv2.CAP_PROP_POS_FRAMES, frame_pos - (fps * 10))
+                    # Skip this Vid
+                    elif key == ord('n') or key == ord('N'):
+                        break;
                     else:
                         # Crop Area control
                         cropPos = resizeCropInfo(key, cropPos, frame_width, frame_height)
@@ -179,7 +196,7 @@ def main():
                     ret, frame = capture.read()
                     pausedFrame = copy.deepcopy(frame)
                     cv2.rectangle(frame, (cropPos[2], cropPos[3]), (cropPos[2] + cropPos[0],
-                            cropPos[3] + cropPos[1]), (0, 0, 255), thickness=1, lineType=cv2.LINE_8)
+                            cropPos[3] + cropPos[1]), (0, 0, 255), thickness=1, lineType=cv2.LINE_8)    
                     cv2.imshow(f'{vid_name}', frame)    
                 else :
                     pausedFrame = copy.deepcopy(frame)
@@ -208,16 +225,16 @@ def main():
         # # Set padding argument
         if target_ratio < crop_ratio:
             offset = (9 * cropPos[0] - 16 * cropPos[1]) / 16
-            if int(offset) % 2 != 0:
-                offset += 1
+            if (int(offset) % 4) != 0:
+                offset += (int(offset) % 4)
             tmp_height = cropPos[1] + offset
             # scale_arg = f"scale=w={cropPos[0]}:h={tmp_height},"
             pad_arg = f"pad={cropPos[0]}:{tmp_height}:(ow-iw)/2:(ih-oh)/2,"
             print(f"[PadInfo] (W : {cropPos[0]}), (H : {tmp_height})")
         else:
             offset = (16 * cropPos[1] - 9 * cropPos[0]) / 9
-            if int(offset) % 2 != 0:
-                offset += 1
+            if (int(offset) % 4) != 0:
+                offset += (int(offset) % 4)
             tmp_width = cropPos[0] + offset
             # scale_arg = f"scale=w={tmp_width}:h={cropPos[1]},"
             pad_arg = f"pad={tmp_width}:{cropPos[1]}:(ow-iw)/2:(ih-oh)/2,"
@@ -238,7 +255,7 @@ def main():
             p = subprocess.Popen(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg + "setsar=sar=1", "-y", "-pix_fmt",
                                  "yuv420p", "-c:v", "libx264", "-crf", "0", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
 
-        print("Encoding Done.")
+        # print("Encoding Done.")
         
         # debugging
         # return
