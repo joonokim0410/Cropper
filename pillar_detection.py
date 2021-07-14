@@ -80,11 +80,12 @@ def main():
     f = io.StringIO()
     #--------------------------------------------------------
 
-    for fpath in vid_grapped:
+    for i, fpath in enumerate(vid_grapped):
         # debugging
         # fpath = "01. TRAX - PARADOX MV.avi"
 
         vid_name = os.path.basename(fpath)[:-4]
+        vid_num = len(vid_grapped)
         # vid_name = vid_name.encode('utf-8').decode('cp949')
 
 
@@ -225,17 +226,19 @@ def main():
         # # Set padding argument
         if target_ratio < crop_ratio:
             offset = (9 * cropPos[0] - 16 * cropPos[1]) / 16
-            if (int(offset) % 4) != 0:
-                offset += (int(offset) % 4)
             tmp_height = cropPos[1] + offset
+            tmp_height = int(tmp_height)
+            if (tmp_height % 4) != 0:
+                tmp_height -= (tmp_height % 4)
             # scale_arg = f"scale=w={cropPos[0]}:h={tmp_height},"
             pad_arg = f"pad={cropPos[0]}:{tmp_height}:(ow-iw)/2:(ih-oh)/2,"
             print(f"[PadInfo] (W : {cropPos[0]}), (H : {tmp_height})")
         else:
             offset = (16 * cropPos[1] - 9 * cropPos[0]) / 9
-            if (int(offset) % 4) != 0:
-                offset += (int(offset) % 4)
             tmp_width = cropPos[0] + offset
+            tmp_width = int(tmp_width)
+            if (tmp_width % 4) != 0:
+                tmp_width -= (tmp_width % 4)
             # scale_arg = f"scale=w={tmp_width}:h={cropPos[1]},"
             pad_arg = f"pad={tmp_width}:{cropPos[1]}:(ow-iw)/2:(ih-oh)/2,"
             print(f"[PadInfo] (W : {tmp_width}), (H : {cropPos[1]})")
