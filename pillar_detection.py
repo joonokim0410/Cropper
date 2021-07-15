@@ -64,9 +64,6 @@ def resizeCropInfo(key, cropPos, frame_width, frame_height):
 
     if not _IsOutOfBound(_cropPos):
         cropPos = _cropPos
-    
-        print("Current Crop Info : ", end="")
-        print(cropPos, end="\r")
 
     return cropPos
 
@@ -84,11 +81,14 @@ def main():
         # debugging
         # fpath = "01. TRAX - PARADOX MV.avi"
 
+        if i >= 68 :
+            return
+
         vid_name = os.path.basename(fpath)[:-4]
         vid_num = len(vid_grapped)
         # vid_name = vid_name.encode('utf-8').decode('cp949')
 
-
+        print(f"Video num : {i + 1} / {vid_num}")
         print("File to detect crop: ", fpath)
         p = subprocess.Popen(["ffmpeg", "-ss", "10", "-i", fpath, "-vf", "cropdetect=limit=38",
                              "-vframes", "3000", "-f", "null", "out.null"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -189,10 +189,14 @@ def main():
 
                 frame_pos = capture.get(cv2.CAP_PROP_POS_FRAMES)
                 frame_count = capture.get(cv2.CAP_PROP_FRAME_COUNT)
-
+                
                 if(frame_pos >= frame_count):
                     break
                 
+                print("Current Crop Info : ", end="")
+                print(cropPos, end="")
+                print(f"\t Frame Count ({frame_pos}/{frame_count})", end="\r")
+
                 if not isPaused:
                     ret, frame = capture.read()
                     pausedFrame = copy.deepcopy(frame)
@@ -205,7 +209,7 @@ def main():
                             cropPos[3] + cropPos[1]), (0, 0, 255), thickness=1, lineType=cv2.LINE_8)
                     cv2.imshow(f'{vid_name}', pausedFrame)
                 
-
+        print("")
         capture.release()
         cv2.destroyAllWindows()
 
@@ -223,7 +227,8 @@ def main():
         crop_ratio = cropPos[0] / cropPos[1]
         scale_arg = ""
 
-        # # Set padding argument
+        # Set padding argument
+        # Offset for 16:9 display ratio
         if target_ratio < crop_ratio:
             offset = (9 * cropPos[0] - 16 * cropPos[1]) / 16
             tmp_height = cropPos[1] + offset
@@ -231,7 +236,7 @@ def main():
             if (tmp_height % 4) != 0:
                 tmp_height -= (tmp_height % 4)
             # scale_arg = f"scale=w={cropPos[0]}:h={tmp_height},"
-            pad_arg = f"pad={cropPos[0]}:{tmp_height}:(ow-iw)/2:(ih-oh)/2,"
+            pad_arg = f"pad={cropPos[0]}:{tmp_height}:(ow-iw)/2:(ih-oh)/2"
             print(f"[PadInfo] (W : {cropPos[0]}), (H : {tmp_height})")
         else:
             offset = (16 * cropPos[1] - 9 * cropPos[0]) / 9
@@ -240,7 +245,7 @@ def main():
             if (tmp_width % 4) != 0:
                 tmp_width -= (tmp_width % 4)
             # scale_arg = f"scale=w={tmp_width}:h={cropPos[1]},"
-            pad_arg = f"pad={tmp_width}:{cropPos[1]}:(ow-iw)/2:(ih-oh)/2,"
+            pad_arg = f"pad={tmp_width}:{cropPos[1]}:(ow-iw)/2:(ih-oh)/2"
             print(f"[PadInfo] (W : {tmp_width}), (H : {cropPos[1]})")
 
         print("Encoding \"%s\" ..." % vid_name)
@@ -249,13 +254,13 @@ def main():
             os.mkdir(args.output_dir)
             print(f'{args.output_dir} created')
 
-        output_path = os.path.join(args.output_dir, f"{vid_name}_cropped.mp4")
+        output_path = os.path.join(args.output_dir, f"{vid_name}_box.mp4")
         if args.debug:
             # for Debug
-            p = subprocess.Popen(["ffmpeg", "-t", "15", "-ss", "30", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg + "setsar=sar=1", "-y",
+            p = subprocess.Popen(["ffmpeg", "-t", "15", "-ss", "30", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y",
                                  "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "0", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
         else:
-            p = subprocess.Popen(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg + "setsar=sar=1", "-y", "-pix_fmt",
+            p = subprocess.Popen(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
                                  "yuv420p", "-c:v", "libx264", "-crf", "0", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
 
         # print("Encoding Done.")
