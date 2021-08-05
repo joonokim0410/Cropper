@@ -137,7 +137,6 @@ def main():
         vid_num = len(input_list)
         logs = ''
 
-
         if not manual_mode:
             if not os.path.exists(f"./logs/{vid_name}.txt"):
                 print(f"[INFO]\t Can`t find log file. [./logs/{vid_name}.txt]")
@@ -147,12 +146,16 @@ def main():
                 logs = f.read()
 
                 if logs is not '':
-                    # Delete "crop=" in list "crop"
-                    allCrops = re.findall("crop=\S+", logs)
-                    cropPos = allCrops[-1].split(":")
-                    cropPos[0] = cropPos[0][5:]
-                    print(f"[INFO]\t Crop area from log file: [w : {cropPos[0]}, h : {cropPos[1]}, x : {cropPos[2]}, y : {cropPos[3]}]")
-                    cropPos = [int(x) for x in cropPos]
+                    try :
+                        # Delete "crop=" in list "crop"
+                        allCrops = re.findall("crop=\S+", logs)
+                        cropPos = allCrops[-1].split(":")
+                        cropPos[0] = cropPos[0][5:]
+                        print(f"[INFO]\t Crop area from log file: [w : {cropPos[0]}, h : {cropPos[1]}, x : {cropPos[2]}, y : {cropPos[3]}]")
+                        cropPos = [int(x) for x in cropPos]
+                    except:
+                        print(f"[!!! WARNNIG !!!]\t Can`t read log file. [./logs/{vid_name}.txt]")
+
                 else :
                     print(f"[!!! WARNNIG !!!]\t Empty log file. [./logs/{vid_name}.txt]")
 
@@ -349,32 +352,32 @@ def main():
             os.mkdir(output_dir)
             print(f'[INFO]\t {output_dir} created')
 
-        output_path = os.path.join(output_dir, f"{vid_name}_box.mp4")
+        output_path = os.path.join(output_dir, f"{vid_name}_box.mov")
         if args.debug:
             # for Debug (short vid encoding)
             if (i + 1) == vid_num :
                 subprocess.run(["ffmpeg", "-t", "15", "-ss", "30", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y",
-                                "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "mp3", "-b:a", "320k", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
+                                "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
             else :
                 p = subprocess.Popen(["ffmpeg", "-t", "15", "-ss", "30", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y",
-                                     "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "mp3", "-b:a", "320k", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
+                                     "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
         elif (logs is '') or manual_mode:
             # Manual Mode
             # Hold process when encoding last video 
             if (i + 1) == vid_num :
                 subprocess.run(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
-                                "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "mp3", "-b:a", "320k", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
+                                "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
             else :
                 p = subprocess.Popen(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
-                                   "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "mp3", "-b:a", "320k", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
+                                   "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
         else:
             # Log file mode (encoding simultaneously 5 videos)
-            if (i % 4 == 0) and (i != 0):
+            if (i % 4 == 0) and (i != 0) or ((i + 1) == vid_num):
                 subprocess.run(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
-                                    "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "mp3", "-b:a", "320k", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
+                                    "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
             else :
                 p = subprocess.Popen(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
-                                   "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "mp3", "-b:a", "320k", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
+                                   "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
                                  
         # debugging
         # return
