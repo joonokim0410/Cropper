@@ -10,10 +10,11 @@ import datetime
 import time
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-i", "--input_dir", default="./", help="Input source vid directory")
+parser.add_argument("-i", "--input_dir", default="./input", help="Input source vid directory")
 # parser.add_argument("-i", "--ivtc_dir", default="./0729_work/ivtc", help="Input ivtc vid directory")
 parser.add_argument("-o", "--output_dir", default="./out", help="Output vid directory")
-parser.add_argument("-c", "--crf", default=15, help="set crf level")
+parser.add_argument("-c", "--crf", default=15, type=int, help="set crf level")
+parser.add_argument("-m", "--multi_encoding", default=3, type=int, help="when log file exist, encoding mutiple videos by this args")
 parser.add_argument("-lb", "--add_letterbox", default=False, action="store_true", help="adding letterbox to make 16:9 ratio")
 parser.add_argument("-uhd", "--uhd_output", default=False, action="store_true", help="set output resolution to 3840:2160")
 parser.add_argument("-log", "--only_logfile", default=False, action="store_true", help="large vid mode. (only write log file.)")
@@ -84,6 +85,7 @@ def main():
     manual_mode = args.manual_mode
     input_dir = args.input_dir
     crf = args.crf
+    multi_how_many = args.multi_encoding - 1
 
     add_letterbox = args.add_letterbox
     uhd_output = args.uhd_output
@@ -148,7 +150,7 @@ def main():
     # print("[INFO]\t Input ivtc dir :", ivtc_dir)
 
     print("[INFO]\t Input dir :", input_dir)
-    for i, fpath in enumerate(input_list):
+    for index, fpath in enumerate(input_list):
         vid_name = os.path.basename(fpath)[:-4]
         vid_num = len(input_list)
         logs = ''
@@ -375,34 +377,24 @@ def main():
                 print(f'[INFO]\t {output_dir} created')
 
             output_path = os.path.join(output_dir, f"{vid_name}_box.mov")
-            ffmpeg_command = f"ffmpeg {debug_shortOutput} -i {fpath} -vf {crop_arg}{scale_arg}{pad_arg} -y -pix_fmt yuv420p -c:v libx264 -crf {crf} -c:a copy -preset medium -loglevel error {uhd_output_args} {output_path}"
+            
+            ## ffmpeg command setting
+            ffmpeg_command = f"ffmpeg {debug_shortOutput} -i \"{fpath}\" -vf {crop_arg}{scale_arg}{pad_arg} -y -pix_fmt yuv420p -c:v libx264 -crf {crf} -c:a copy -preset medium -loglevel error {uhd_output_args} \"{output_path}\""
             print(ffmpeg_command)
 
-            if args.debug:
-                # for Debug (short vid encoding)
-                if (i + 1) == vid_num :
-                    subprocess.run(["ffmpeg", "-t", "15", "-ss", "30", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y",
-                                    "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", f"{crf}", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", "-s" , "3840x2160", f"{output_path}"])
-                else :
-                    p = subprocess.Popen(["ffmpeg", "-t", "15", "-ss", "30", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y",
-                                        "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", f"{crf}", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", "-s" , "3840x2160", f"{output_path}"])
-            elif (logs is '') or manual_mode:
+            if (logs is '') or manual_mode:
                 # Manual Mode
                 # Hold process when encoding last video 
-                if (i + 1) == vid_num :
-                    subprocess.run(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
-                                    "yuv420p", "-c:v", "libx264", "-crf", f"{crf}", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", "-s" , "3840x2160", f"{output_path}"])
+                if (index + 1) == vid_num :
+                    p = subprocess.run(ffmpeg_command, shell=True)
                 else :
-                    p = subprocess.Popen(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
-                                    "yuv420p", "-c:v", "libx264", "-crf", f"{crf}", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", "-s" , "3840x2160", f"{output_path}"])
+                    p = subprocess.Popen(ffmpeg_command, shell=True)
             else:
                 # Log file mode (encoding simultaneously 5 videos)
-                if (i % 2 == 0) and (i != 0) or ((i + 1) == vid_num):
-                    subprocess.run(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
-                                        "yuv420p", "-c:v", "libx264", "-crf", f"{crf}", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", "-s" , "3840x2160", f"{output_path}"])
+                if (index % multi_how_many == 0) and (index != 0) or ((index + 1) == vid_num):
+                    p = subprocess.run(ffmpeg_command, shell=True)
                 else :
-                    p = subprocess.Popen(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
-                                    "yuv420p", "-c:v", "libx264", "-crf", f"{crf}", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", "-s" , "3840x2160", f"{output_path}"])
+                    p = subprocess.Popen(ffmpeg_command, shell=True)
                                     
             # debugging
             # return
