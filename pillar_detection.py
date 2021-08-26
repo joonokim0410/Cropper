@@ -13,8 +13,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-i", "--input_dir", default="./", help="Input source vid directory")
 # parser.add_argument("-i", "--ivtc_dir", default="./0729_work/ivtc", help="Input ivtc vid directory")
 parser.add_argument("-o", "--output_dir", default="./out", help="Output vid directory")
-parser.add_argument("-m", "--manual_mode", default=False, action="store_true", help="Manual cropping without using log file")
-parser.add_argument("-d", "--debug", default=False, action="store_true", help="for debugging. short output")
+parser.add_argument("-c", "--crf", default=15, help="set crf level")
+parser.add_argument("-lb", "--add_letterbox", default=False, action="store_true", help="adding letterbox to make 16:9 ratio")
+parser.add_argument("-uhd", "--uhd_output", default=False, action="store_true", help="set output resolution to 3840:2160")
+parser.add_argument("-log", "--only_logfile", default=False, action="store_true", help="large vid mode. (only write log file.)")
+parser.add_argument("-m", "--manual_mode", default=False, action="store_true", help="Manual cropping without using log file (Ignore log files)")
+parser.add_argument("-d", "--debug", default=False, action="store_true", help="for debugging. (short length video output)")
 args = parser.parse_args()
 
 # Adjust crop info in display layout.
@@ -79,6 +83,21 @@ def main():
     vid_types = ('*.avi', '*.mov', '*.mp4', '*.mxf')
     manual_mode = args.manual_mode
     input_dir = args.input_dir
+    crf = args.crf
+
+    add_letterbox = args.add_letterbox
+    uhd_output = args.uhd_output
+    only_logfile = args.only_logfile
+    debug = args.debug
+
+    uhd_output_args = ""
+    if uhd_output :
+        uhd_output_args = "-s 3840x2160"
+
+    debug_shortOutput = ""
+    if debug :
+        debug_shortOutput = "-t 15 -ss 30"
+
     # ivtc_dir = args.ivtc_dir
     output_dir = args.output_dir
     
@@ -120,15 +139,12 @@ def main():
     #     print(f"[INFO]\t Work ivtc on \"{ivtc_input_name}\" ===> \"{ivtc_output_path}\" ... [{i + 1}/{ivtc_input_num}]")
     #     print("[INFO]\t Please wait...")
     #     start_time = time.time()
-    #     subprocess.run(["ffmpeg", "-ss", "10", "-i", ivtc_input, "-vf", "fieldmatch=mode=pc_n:combmatch=full,bwdif=0:-1:1,decimate", "-c:v", "libx264", "-crf", "0",
+    #     subprocess.run(["ffmpeg", "-ss", "10", "-i", ivtc_input, "-vf", "fieldmatch=mode=pc_n:combmatch=full,bwdif=0:-1:1,decimate", "-c:v", "libx264", "-crf", f"{crf}",
     #                     "-preset", "ultrafast","-loglevel", "quiet", "-y", ivtc_output_path])
     #     t = time.time() - start_time
     #     print("[INFO]\t Work done. [It takes %.2f seconds.]" % t)
     # ivtc_dir = []
     # ivtc_dir += sorted(glob.glob(os.path.join(ivtc_dir, "*.mp4")))
-
-    # target_ratio = 16 / 9
-    # print("[INFO]\t Target ratio : %.7f" %target_ratio)
     # print("[INFO]\t Input ivtc dir :", ivtc_dir)
 
     print("[INFO]\t Input dir :", input_dir)
@@ -160,7 +176,7 @@ def main():
                     print(f"[!!! WARNNIG !!!]\t Empty log file. [./logs/{vid_name}.txt]")
 
         if (logs is '') or manual_mode:
-            # Korean title text bug fix (work in progress)
+            # TODO : Korean title text bug fix (work in progress)
             # vid_name = vid_name.encode('utf-8').decode('cp949')
             
             print(f"[INFO]\t Video num : {i + 1} / {vid_num}")
@@ -169,10 +185,7 @@ def main():
             p = subprocess.Popen(["ffmpeg", "-ss", "10", "-i", fpath, "-vf", "cropdetect=limit=38",
                                 "-vframes", "3000", "-f", "null", "out.null"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             infos = p.stderr.read().decode('utf-8')
-            # print (infos)
             allCrops = re.findall("crop=\S+", infos)
-            # print ("Crop Infos : ")
-            # print (allCrops)
             mostCommonCrop = Counter(allCrops).most_common(1)
 
             if len(mostCommonCrop) > 0 :
@@ -223,6 +236,7 @@ def main():
             isPaused = False
             pausedFrame = None
             frame = None
+            isSkipped = False
             cv2.namedWindow(f'{vid_name}', cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
             while True:
                 key = cv2.waitKeyEx(10)
@@ -261,6 +275,8 @@ def main():
                         print("[INFO]\t ###################################################################################################################### ")
                     # Skip this Vid
                     elif key == ord('n') or key == ord('N'):
+                        print(f"[INFO]\t Skip this video")
+                        isSkipped = True
                         break;
                     else:
                         # Crop Area control
@@ -280,12 +296,12 @@ def main():
                     ret, frame = capture.read()
                     pausedFrame = copy.deepcopy(frame)
                     cv2.rectangle(frame, (cropPos[2], cropPos[3]), (cropPos[2] + cropPos[0],
-                            cropPos[3] + cropPos[1]), (0, 0, 255), thickness=1, lineType=cv2.LINE_8)    
+                            cropPos[3] + cropPos[1]), (0, 0, 255), thickness=2, lineType=cv2.LINE_8)    
                     cv2.imshow(f'{vid_name}', frame)    
                 else :
                     pausedFrame = copy.deepcopy(frame)
                     cv2.rectangle(pausedFrame, (cropPos[2], cropPos[3]), (cropPos[2] + cropPos[0],
-                            cropPos[3] + cropPos[1]), (0, 0, 255), thickness=1, lineType=cv2.LINE_8)
+                            cropPos[3] + cropPos[1]), (0, 0, 255), thickness=2, lineType=cv2.LINE_8)
                     cv2.imshow(f'{vid_name}', pausedFrame)
                     
             print("")
@@ -301,86 +317,95 @@ def main():
 
             dt_str = getTime()
 
-            if not os.path.exists("./logs"):
-                print(f"[INFO]\t Make log directory [./logs/{vid_name}.txt]")
-                os.makedirs("./logs")
+            if not isSkipped:
+                if not os.path.exists("./logs"):
+                    print(f"[INFO]\t Make log directory [./logs/{vid_name}.txt]")
+                    os.makedirs("./logs")
 
-            if not os.path.exists(f"./logs/{vid_name}.txt"):
-                print(f"[INFO]\t Save log file in [./logs/{vid_name}.txt]")
-                f = open(f"./logs/{vid_name}.txt", 'w')
-            else :
-                print(f"[INFO]\t Add line in log file [./logs/{vid_name}.txt]")
-                f = open(f"./logs/{vid_name}.txt", 'a')
+                if not os.path.exists(f"./logs/{vid_name}.txt"):
+                    print(f"[INFO]\t Save log file in [./logs/{vid_name}.txt]")
+                    f = open(f"./logs/{vid_name}.txt", 'w')
+                else :
+                    print(f"[INFO]\t Add line in log file [./logs/{vid_name}.txt]")
+                    f = open(f"./logs/{vid_name}.txt", 'a')
 
-            f.write(f"{dt_str}\tcrop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]}\n")
-            f.close
+                f.write(f"{dt_str}\tcrop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]}\n")
+                f.close
 
-        # ffmpeg filter args
-        crop_arg = f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]},"
-        print(f"[INFO]\t [CropInfo] (W : {cropPos[0]}), (H : {cropPos[1]}), (X : {cropPos[2]}), (Y : {cropPos[3]})")
+        if not only_logfile :
+            # ffmpeg filter args
+            crop_arg = f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]},"
+            print(f"[INFO]\t [CropInfo] (W : {cropPos[0]}), (H : {cropPos[1]}), (X : {cropPos[2]}), (Y : {cropPos[3]})")
 
-        # 2021_07_28 : Delete padding argument
-        crop_arg = f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]}"
-        crop_ratio = cropPos[0] / cropPos[1]
-        scale_arg = ""
-        pad_arg = ""
+            crop_arg = f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]}"
+            crop_ratio = cropPos[0] / cropPos[1]
+            scale_arg = ""
+            pad_arg = ""
 
-        # Set padding(letter box) argument
-        # variable "offset" for 16:9 output display ratio
-        # if target_ratio < crop_ratio:
-        #     offset = (9 * cropPos[0] - 16 * cropPos[1]) / 16
-        #     tmp_height = cropPos[1] + offset
-        #     tmp_height = int(tmp_height)
-        #     if (tmp_height % 4) != 0:
-        #         tmp_height -= (tmp_height % 4)
-        #     # scale_arg = f"scale=w={cropPos[0]}:h={tmp_height},"
-        #     pad_arg = f"pad={cropPos[0]}:{tmp_height}:(ow-iw)/2:(ih-oh)/2"
-        #     print(f"[INFO]\t [PadInfo] (W : {cropPos[0]}), (H : {tmp_height})")
-        # else:
-        #     offset = (16 * cropPos[1] - 9 * cropPos[0]) / 9
-        #     tmp_width = cropPos[0] + offset
-        #     tmp_width = int(tmp_width)
-        #     if (tmp_width % 4) != 0:
-        #         tmp_width -= (tmp_width % 4)
-        #     # scale_arg = f"scale=w={tmp_width}:h={cropPos[1]},"
-        #     pad_arg = f"pad={tmp_width}:{cropPos[1]}:(ow-iw)/2:(ih-oh)/2"
-        #     print(f"[INFO]\t [PadInfo] (W : {tmp_width}), (H : {cropPos[1]})")
+            # Set padding(letter box) argument
+            # variable "offset" for 16:9 output display ratio
+            if add_letterbox :
+                target_ratio = 16 / 9
+                print("[INFO]\t Target ratio : %.7f" %target_ratio)
 
-        print("[INFO]\t Encoding \"%s\" ..." % vid_name)
+                if target_ratio < crop_ratio:
+                    offset = (9 * cropPos[0] - 16 * cropPos[1]) / 16
+                    tmp_height = cropPos[1] + offset
+                    tmp_height = int(tmp_height)
+                    if (tmp_height % 4) != 0:
+                        tmp_height -= (tmp_height % 4)
+                    # scale_arg = f"scale=w={cropPos[0]}:h={tmp_height},"
+                    pad_arg = f", pad={cropPos[0]}:{tmp_height}:(ow-iw)/2:(ih-oh)/2"
+                    print(f"[INFO]\t [PadInfo] (W : {cropPos[0]}), (H : {tmp_height})")
+                else:
+                    offset = (16 * cropPos[1] - 9 * cropPos[0]) / 9
+                    tmp_width = cropPos[0] + offset
+                    tmp_width = int(tmp_width)
+                    if (tmp_width % 4) != 0:
+                        tmp_width -= (tmp_width % 4)
+                    # scale_arg = f"scale=w={tmp_width}:h={cropPos[1]},"
+                    pad_arg = f", pad={tmp_width}:{cropPos[1]}:(ow-iw)/2:(ih-oh)/2"
+                    print(f"[INFO]\t [PadInfo] (W : {tmp_width}), (H : {cropPos[1]})")
 
-        if not os.path.exists(output_dir) :
-            os.mkdir(output_dir)
-            print(f'[INFO]\t {output_dir} created')
+            print("[INFO]\t Encoding \"%s\" ..." % vid_name)
+            print("[INFO]\t Video CRF = %d" % int(crf))
 
-        output_path = os.path.join(output_dir, f"{vid_name}_box.mov")
-        if args.debug:
-            # for Debug (short vid encoding)
-            if (i + 1) == vid_num :
-                subprocess.run(["ffmpeg", "-t", "15", "-ss", "30", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y",
-                                "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
-            else :
-                p = subprocess.Popen(["ffmpeg", "-t", "15", "-ss", "30", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y",
-                                     "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
-        elif (logs is '') or manual_mode:
-            # Manual Mode
-            # Hold process when encoding last video 
-            if (i + 1) == vid_num :
-                subprocess.run(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
-                                "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
-            else :
-                p = subprocess.Popen(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
-                                   "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
-        else:
-            # Log file mode (encoding simultaneously 5 videos)
-            if (i % 4 == 0) and (i != 0) or ((i + 1) == vid_num):
-                subprocess.run(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
-                                    "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
-            else :
-                p = subprocess.Popen(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
-                                   "yuv420p", "-c:v", "libx264", "-crf", "0", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", f"{output_path}"])
-                                 
-        # debugging
-        # return
+            if not os.path.exists(output_dir) :
+                os.mkdir(output_dir)
+                print(f'[INFO]\t {output_dir} created')
+
+            output_path = os.path.join(output_dir, f"{vid_name}_box.mov")
+            ffmpeg_command = f"ffmpeg {debug_shortOutput} -i {fpath} -vf {crop_arg}{scale_arg}{pad_arg} -y -pix_fmt yuv420p -c:v libx264 -crf {crf} -c:a copy -preset medium -loglevel error {uhd_output_args} {output_path}"
+            print(ffmpeg_command)
+
+            if args.debug:
+                # for Debug (short vid encoding)
+                if (i + 1) == vid_num :
+                    subprocess.run(["ffmpeg", "-t", "15", "-ss", "30", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y",
+                                    "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", f"{crf}", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", "-s" , "3840x2160", f"{output_path}"])
+                else :
+                    p = subprocess.Popen(["ffmpeg", "-t", "15", "-ss", "30", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y",
+                                        "-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", f"{crf}", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", "-s" , "3840x2160", f"{output_path}"])
+            elif (logs is '') or manual_mode:
+                # Manual Mode
+                # Hold process when encoding last video 
+                if (i + 1) == vid_num :
+                    subprocess.run(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
+                                    "yuv420p", "-c:v", "libx264", "-crf", f"{crf}", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", "-s" , "3840x2160", f"{output_path}"])
+                else :
+                    p = subprocess.Popen(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
+                                    "yuv420p", "-c:v", "libx264", "-crf", f"{crf}", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", "-s" , "3840x2160", f"{output_path}"])
+            else:
+                # Log file mode (encoding simultaneously 5 videos)
+                if (i % 2 == 0) and (i != 0) or ((i + 1) == vid_num):
+                    subprocess.run(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
+                                        "yuv420p", "-c:v", "libx264", "-crf", f"{crf}", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", "-s" , "3840x2160", f"{output_path}"])
+                else :
+                    p = subprocess.Popen(["ffmpeg", "-i", fpath, "-vf", crop_arg + scale_arg + pad_arg, "-y", "-pix_fmt",
+                                    "yuv420p", "-c:v", "libx264", "-crf", f"{crf}", "-c:a", "copy", "-preset", "medium", "-loglevel", "error", "-s" , "3840x2160", f"{output_path}"])
+                                    
+            # debugging
+            # return
 
 if __name__ == "__main__":
     main()
