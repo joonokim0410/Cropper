@@ -14,11 +14,13 @@ parser.add_argument("-i", "--input_dir", default="./input", help="Input source v
 # parser.add_argument("-i", "--ivtc_dir", default="./0729_work/ivtc", help="Input ivtc vid directory")
 parser.add_argument("-o", "--output_dir", default="./out", help="Output vid directory")
 parser.add_argument("-c", "--crf", default=15, type=int, help="set crf level")
-parser.add_argument("-m", "--multi_encoding", default=3, type=int, help="when log file exist, encoding mutiple videos by this args")
 parser.add_argument("-lb", "--add_letterbox", default=False, action="store_true", help="adding letterbox to make 16:9 ratio")
 parser.add_argument("-uhd", "--uhd_output", default=False, action="store_true", help="set output resolution to 3840:2160")
+parser.add_argument("-mul", "--multi_encoding", default=3, type=int, help="when log file exist, encoding mutiple videos by this args")
+parser.add_argument("-s", "--cropsize_scale", default=1, type=int, help="before use crop size from logfile, scale up")
 parser.add_argument("-log", "--only_logfile", default=False, action="store_true", help="large vid mode. (only write log file.)")
-parser.add_argument("-m", "--manual_mode", default=False, action="store_true", help="Manual cropping without using log file (Ignore log files)")
+parser.add_argument("-man", "--manual_mode", default=False, action="store_true", help="manual cropping without using log file (Ignore log files)")
+parser.add_argument("-edit", "--edit_mode", default=False, action="store_true", help="get first crop area from log file")
 parser.add_argument("-d", "--debug", default=False, action="store_true", help="for debugging. (short length video output)")
 args = parser.parse_args()
 
@@ -82,15 +84,27 @@ def getTime():
 
 def main():
     vid_types = ('*.avi', '*.mov', '*.mp4', '*.mxf')
-    manual_mode = args.manual_mode
+
+    # video encoding opts
     input_dir = args.input_dir
     crf = args.crf
-    multi_how_many = args.multi_encoding - 1
-
     add_letterbox = args.add_letterbox
     uhd_output = args.uhd_output
+
+    # program modes
+    multi_how_many = args.multi_encoding - 1
+    scale =  int(args.cropsize_scale)
     only_logfile = args.only_logfile
+    manual_mode = args.manual_mode
     debug = args.debug
+    edit_mode = args.edit_mode
+
+    if scale < 1 :
+        print(f"[!!! ERROR !!!]\t Invalid scale option [scale : {scale}]")
+        return
+    elif multi_how_many < 1 :
+        print(f"[!!! ERROR !!!]\t Invalid multi_encoding option [multi_encoding : {multi_how_many}]")
+        return
 
     uhd_output_args = ""
     if uhd_output :
@@ -111,9 +125,9 @@ def main():
         input_list += sorted(glob.glob(os.path.join(input_dir, types)))
 
     """
+    File cross check codes. [deprecated, 07/30]
     Compare "args.source_dir", "args.ivtc_dir" 
     check difference of two input, make ivtc version of source_dir videos.
-    ----- NOT USED CODE [07/30] -----
     """
     # ivtc_list += sorted(glob.glob(os.path.join(ivtc_dir, "*.mp4")))
 
@@ -153,54 +167,64 @@ def main():
     for index, fpath in enumerate(input_list):
         vid_name = os.path.basename(fpath)[:-4]
         vid_num = len(input_list)
+        isSkipped = False
         logs = ''
 
+        # Read log file if exist
         if not manual_mode:
             if not os.path.exists(f"./logs/{vid_name}.txt"):
                 print(f"[INFO]\t Can`t find log file. [./logs/{vid_name}.txt]")
+                edit_mode = False
             else :
                 print(f"[INFO]\t Loading log file... [./logs/{vid_name}.txt]")
                 f = open(f"./logs/{vid_name}.txt", "r")
                 logs = f.read()
 
-                if logs is not '':
+                if logs != '':
                     try :
                         # Delete "crop=" in list "crop"
                         allCrops = re.findall("crop=\S+", logs)
                         cropPos = allCrops[-1].split(":")
                         cropPos[0] = cropPos[0][5:]
                         print(f"[INFO]\t Crop area from log file: [w : {cropPos[0]}, h : {cropPos[1]}, x : {cropPos[2]}, y : {cropPos[3]}]")
-                        cropPos = [int(x) for x in cropPos]
+                        cropPos = [int(x * scale) for x in cropPos]
+                        if scale > 1 :
+                            print(f"[INFO]\t Scale up crop area: [w : {cropPos[0]}, h : {cropPos[1]}, x : {cropPos[2]}, y : {cropPos[3]}]")
+
                     except:
                         print(f"[!!! WARNNIG !!!]\t Can`t read log file. [./logs/{vid_name}.txt]")
 
                 else :
                     print(f"[!!! WARNNIG !!!]\t Empty log file. [./logs/{vid_name}.txt]")
 
-        if (logs is '') or manual_mode:
-            # TODO : Korean title text bug fix (work in progress)
+        if (logs == '') or manual_mode or edit_mode:
+            # TODO : Korean title text bug fix
             # vid_name = vid_name.encode('utf-8').decode('cp949')
-            
-            print(f"[INFO]\t Video num : {i + 1} / {vid_num}")
+
+            print(f"[INFO]\t Video num : {index + 1} / {vid_num}")
             print("[INFO]\t File to detect crop area: ", fpath)
-            print("[INFO]\t Detecting crop area...")
-            p = subprocess.Popen(["ffmpeg", "-ss", "10", "-i", fpath, "-vf", "cropdetect=limit=38",
-                                "-vframes", "3000", "-f", "null", "out.null"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            infos = p.stderr.read().decode('utf-8')
-            allCrops = re.findall("crop=\S+", infos)
-            mostCommonCrop = Counter(allCrops).most_common(1)
-
-            if len(mostCommonCrop) > 0 :
-                crop = mostCommonCrop[0][0]
+            if edit_mode:
+                print("[INFO]\t (Edit mode) Read crop area from log file...")
+                print(f"[INFO]\t Crop area from log file: [w : {cropPos[0]}, h : {cropPos[1]}, x : {cropPos[2]}, y : {cropPos[3]}]")
             else :
-                print(f"[!!! ERROR !!!]\t Can`t read input vid. Skip to next vid \t ({fpath})")
-                continue
+                print("[INFO]\t Detecting crop area...")
+                p = subprocess.Popen(["ffmpeg", "-ss", "10", "-i", fpath, "-vf", "cropdetect=limit=38",
+                                    "-vframes", "3000", "-f", "null", "out.null"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                infos = p.stderr.read().decode('utf-8')
+                allCrops = re.findall("crop=\S+", infos)
+                mostCommonCrop = Counter(allCrops).most_common(1)
 
-            # Delete "crop=" in list "crop"
-            cropPos = crop.split(":")
-            cropPos[0] = cropPos[0][5:]
-            print(f"[INFO]\t Most common detected crop area: [w : {cropPos[0]}, h : {cropPos[1]}, x : {cropPos[2]}, y : {cropPos[3]}]")
-            cropPos = [int(x) for x in cropPos]
+                if len(mostCommonCrop) > 0 :
+                    crop = mostCommonCrop[0][0]
+                else :
+                    print(f"[!!! ERROR !!!]\t Can`t read input vid. Skip to next vid \t ({fpath})")
+                    continue
+
+                # Delete "crop=" in list "crop"
+                cropPos = crop.split(":")
+                cropPos[0] = cropPos[0][5:]
+                print(f"[INFO]\t Most common detected crop area: [w : {cropPos[0]}, h : {cropPos[1]}, x : {cropPos[2]}, y : {cropPos[3]}]")
+                cropPos = [int(x) for x in cropPos]
 
             # Capture vid, Get Vid info
             capture = cv2.VideoCapture(fpath)
@@ -238,8 +262,10 @@ def main():
             isPaused = False
             pausedFrame = None
             frame = None
-            isSkipped = False
+
             cv2.namedWindow(f'{vid_name}', cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
+
+            # Display crop size control UI
             while True:
                 key = cv2.waitKeyEx(10)
 
@@ -271,6 +297,7 @@ def main():
                     elif key == ord('q') or key == ord('Q'):
                         if not isPaused:
                             capture.set(cv2.CAP_PROP_POS_FRAMES, frame_pos - (fps * 10))
+                    # Display key guide
                     elif key == ord('h') or key == ord('H'):
                         print("[INFO]\t ### KEY GUIDE ########################################################################################################")
                         print("[INFO]\t #  (MOVE : wasd), (RESIZE : ijkl), (FOR / BACKWARD : q, e), (RESET : r), (PAUSE : p), (SKIP : n), (CONFIRM : enter)  #")
@@ -280,6 +307,18 @@ def main():
                         print(f"[INFO]\t Skip this video")
                         isSkipped = True
                         break;
+                    elif key == ord('v') or key == ord('V'):
+                        _x = cropPos[2]
+                        _y = cropPos[3]
+                        _w = cropPos[0]
+                        _h = cropPos[1]
+                        _frame = copy.deepcopy(pausedFrame)
+                        cv2.namedWindow(f'{vid_name}_current_area', cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
+                        cv2.waitKey(10)
+                        cv2.imshow(f'{vid_name}_current_area', _frame[_y: (_y + _h), _x: (_x + _w)])
+                        # cv2.imshow(f'{vid_name}_current_area', _frame[0: int(frame_height), 0: int(frame_width)])
+                        # cv2.imshow(f'{vid_name}_current_area', _frame[0: int(100), 0: int(100)])
+                        
                     else:
                         # Crop Area control
                         cropPos = resizeCropInfo(key, cropPos, frame_width, frame_height)
@@ -294,17 +333,20 @@ def main():
                 print(cropPos, end="")
                 print(f"\t Frame Count ({frame_pos}/{frame_count})\t[PRESS \"h\" TO VIEW KEY GUIDE]", end="\r")
 
-                if not isPaused:
-                    ret, frame = capture.read()
-                    pausedFrame = copy.deepcopy(frame)
-                    cv2.rectangle(frame, (cropPos[2], cropPos[3]), (cropPos[2] + cropPos[0],
-                            cropPos[3] + cropPos[1]), (0, 0, 255), thickness=2, lineType=cv2.LINE_8)    
-                    cv2.imshow(f'{vid_name}', frame)    
-                else :
+                # When paused, hold current frame untill unpause.
+                if isPaused:
+                    # deep copy current frame, use that frame for draw rectangle.
                     pausedFrame = copy.deepcopy(frame)
                     cv2.rectangle(pausedFrame, (cropPos[2], cropPos[3]), (cropPos[2] + cropPos[0],
                             cropPos[3] + cropPos[1]), (0, 0, 255), thickness=2, lineType=cv2.LINE_8)
                     cv2.imshow(f'{vid_name}', pausedFrame)
+                else :
+                    ret, frame = capture.read()
+                    # deep copy current frame for pausing process.
+                    pausedFrame = copy.deepcopy(frame)
+                    cv2.rectangle(frame, (cropPos[2], cropPos[3]), (cropPos[2] + cropPos[0],
+                            cropPos[3] + cropPos[1]), (0, 0, 255), thickness=2, lineType=cv2.LINE_8)    
+                    cv2.imshow(f'{vid_name}', frame)    
                     
             print("")
             capture.release()
@@ -334,30 +376,36 @@ def main():
                 f.write(f"{dt_str}\tcrop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]}\n")
                 f.close
 
-        if not only_logfile :
-            # ffmpeg filter args
-            crop_arg = f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]},"
+        # Set ffmpeg commands, actual ffmpeg encoding
+        if not (only_logfile or isSkipped):
+            crop_arg = f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]}"
             print(f"[INFO]\t [CropInfo] (W : {cropPos[0]}), (H : {cropPos[1]}), (X : {cropPos[2]}), (Y : {cropPos[3]})")
 
             crop_arg = f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]}"
-            crop_ratio = cropPos[0] / cropPos[1]
+            current_crop_ratio = cropPos[0] / cropPos[1]
             scale_arg = ""
             pad_arg = ""
 
-            # Set padding(letter box) argument
-            # variable "offset" for 16:9 output display ratio
+            """
+            Set padding(letter box) argument
+            variable "offset" for 16:9 output display ratio
+
+            pad_arg syntax:
+                pad= {width after padding}:{height after padding}:{x offset of pad}:{y offset of pad}
+            """
             if add_letterbox :
+                # Always target 16:9 display ratio
                 target_ratio = 16 / 9
                 print("[INFO]\t Target ratio : %.7f" %target_ratio)
 
-                if target_ratio < crop_ratio:
+                if target_ratio < current_crop_ratio:
                     offset = (9 * cropPos[0] - 16 * cropPos[1]) / 16
                     tmp_height = cropPos[1] + offset
                     tmp_height = int(tmp_height)
                     if (tmp_height % 4) != 0:
                         tmp_height -= (tmp_height % 4)
-                    # scale_arg = f"scale=w={cropPos[0]}:h={tmp_height},"
-                    pad_arg = f", pad={cropPos[0]}:{tmp_height}:(ow-iw)/2:(ih-oh)/2"
+                    pad_arg = f",pad={cropPos[0]}:{tmp_height}:(ow-iw)/2:(ih-oh)/2"
+                    scale_arg = f",scale=w={cropPos[0]}:h={tmp_height}"
                     print(f"[INFO]\t [PadInfo] (W : {cropPos[0]}), (H : {tmp_height})")
                 else:
                     offset = (16 * cropPos[1] - 9 * cropPos[0]) / 9
@@ -365,12 +413,11 @@ def main():
                     tmp_width = int(tmp_width)
                     if (tmp_width % 4) != 0:
                         tmp_width -= (tmp_width % 4)
-                    # scale_arg = f"scale=w={tmp_width}:h={cropPos[1]},"
-                    pad_arg = f", pad={tmp_width}:{cropPos[1]}:(ow-iw)/2:(ih-oh)/2"
+                    pad_arg = f",pad={tmp_width}:{cropPos[1]}:(ow-iw)/2:(ih-oh)/2"
+                    scale_arg = f",scale=w={tmp_width}:h={cropPos[1]}"
                     print(f"[INFO]\t [PadInfo] (W : {tmp_width}), (H : {cropPos[1]})")
 
-            print("[INFO]\t Encoding \"%s\" ..." % vid_name)
-            print("[INFO]\t Video CRF = %d" % int(crf))
+            
 
             if not os.path.exists(output_dir) :
                 os.mkdir(output_dir)
@@ -379,11 +426,13 @@ def main():
             output_path = os.path.join(output_dir, f"{vid_name}_box.mov")
             
             ## ffmpeg command setting
-            ffmpeg_command = f"ffmpeg {debug_shortOutput} -i \"{fpath}\" -vf {crop_arg}{scale_arg}{pad_arg} -y -pix_fmt yuv420p -c:v libx264 -crf {crf} -c:a copy -preset medium -loglevel error {uhd_output_args} \"{output_path}\""
+            ffmpeg_command = f"ffmpeg {debug_shortOutput} -i \"{fpath}\" -vf \"{crop_arg}{scale_arg}{pad_arg}\" -y -pix_fmt yuv420p -c:v libx264 -crf {crf} -c:a copy -preset medium -loglevel error {uhd_output_args} \"{output_path}\""
             print(ffmpeg_command)
+            print("[INFO]\t Encoding \"%s\" ..." % vid_name)    
+            print("[INFO]\t Video CRF = %d" % int(crf))
 
-            if (logs is '') or manual_mode:
-                # Manual Mode
+            if (logs == '') or manual_mode:
+                # Manual Mode (always encoding one by one)
                 # Hold process when encoding last video 
                 if (index + 1) == vid_num :
                     p = subprocess.run(ffmpeg_command, shell=True)
@@ -395,10 +444,7 @@ def main():
                     p = subprocess.run(ffmpeg_command, shell=True)
                 else :
                     p = subprocess.Popen(ffmpeg_command, shell=True)
-                                    
-            # debugging
-            # return
 
 if __name__ == "__main__":
     main()
-    print("[INFO]\t Encoding Done.")
+    print("[INFO]\t Program End.")
