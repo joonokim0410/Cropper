@@ -1,0 +1,269 @@
+from pillar_detection_utils import *
+
+class VideoCropCfg():
+    def __init__(self):
+        self.vid_name = ''
+        
+        self.frame_pos = 0
+        self.frame_count = 0
+        
+        self.captured_vid = None
+        self.isPaused = False
+        self.isSkipped = False
+        self.cleanFrame = None
+        self.boxedFrame = None
+        self.frame = None
+        
+        self.frame_width = 0
+        self.frame_height = 0
+        self.fps = 0
+        
+    def getVidInfo(self, fpath):
+        self.captured_vid = cv2.VideoCapture(fpath)
+        self.frame_width = self.captured_vid.get(cv2.CAP_PROP_FRAME_WIDTH)
+        self.frame_height = self.captured_vid.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        self.fps = self.captured_vid.get(cv2.CAP_PROP_FPS)
+        
+    def vidRelease(self):
+        self.captured_vid.release()
+
+def video_croppping(crop_cfg, cropPos):
+    '''
+    retCode value mean
+    0 : keep playing
+    1 : done with cropping (to next vid)
+    2 : replay
+    '''
+    retCode = 0
+    
+    # search_distance unit : second
+    search_distance = 5
+    # play_speed unit : millisecond
+    play_speed = 10
+    key = cv2.waitKeyEx(play_speed)
+
+    # Close button(X button) event
+    if cv2.getWindowProperty(f'{crop_cfg.vid_name}', cv2.WND_PROP_VISIBLE) < 1 :
+        retCode = 1
+        return retCode, cropPos
+
+    if key > 0 :
+        # 13 == Enter key ASCII Code
+        if key == 13:
+            retCode = 1
+        # Pause
+        elif key == ord('p') or key == ord('P'):
+            if crop_cfg.isPaused :
+                crop_cfg.isPaused = False
+            else :
+                crop_cfg.isPaused = True
+        # Replay
+        elif key == ord('r') or key == ord('R'):
+            if not crop_cfg.isPaused:
+                retCode = 2
+        # Move Forward
+        elif key == ord('e') or key == ord('E'):
+            if not crop_cfg.isPaused:
+                crop_cfg.captured_vid.set(cv2.CAP_PROP_POS_FRAMES, crop_cfg.frame_pos + (crop_cfg.fps * search_distance))
+        # Move Backward
+        elif key == ord('q') or key == ord('Q'):
+            if not crop_cfg.isPaused:
+                crop_cfg.captured_vid.set(cv2.CAP_PROP_POS_FRAMES, crop_cfg.frame_pos - (crop_cfg.fps * search_distance))
+        # Display key guide
+        elif key == ord('h') or key == ord('H'):
+            print("[INFO]\t ### KEY GUIDE ##############################################################################################################################################################")
+            print("[INFO]\t #  (MOVE : wasd), (RESIZE : ijkl), (FOR / BACKWARD : q, e), (RESET : r), (PAUSE : p), (SKIP : n), (Preview : v), (Save current frame : b)(CONFIRM : enter)  #")
+            print("[INFO]\t ############################################################################################################################################################################ ")
+        # Skip this Vid
+        elif key == ord('n') or key == ord('N'):
+            print(f"[INFO]\t Skip this video")
+            crop_cfg.isSkipped = True
+            retCode = 1
+        # Preview this crop area on new window
+        elif key == ord('v') or key == ord('V'):
+            _x = cropPos[2]
+            _y = cropPos[3]
+            _w = cropPos[0]
+            _h = cropPos[1]
+            _frame = copy.deepcopy(crop_cfg.cleanFrame)
+            cv2.namedWindow(f'{crop_cfg.vid_name}_current_area', cv2.WINDOW_KEEPRATIO)
+            cv2.waitKey(10)
+            cv2.imshow(f'{crop_cfg.vid_name}_current_area', _frame[_y: (_y + _h), _x: (_x + _w)])
+        # captured_vid, download this crop area in png file
+        elif key == ord('b') or key == ord('B'):
+            _x = cropPos[2]
+            _y = cropPos[3]
+            _w = cropPos[0]
+            _h = cropPos[1]
+            _frame = copy.deepcopy(crop_cfg.cleanFrame)
+
+            _vid_name = crop_cfg.vid_name.replace(" ","_")
+            image_dir = "./capture_image"
+            path = os.path.join(image_dir, _vid_name)
+            if not os.path.exists(path) :
+                os.makedirs(path)
+                print(f'[INFO]\t {path} created')
+
+            image_name = f'{_vid_name}_({crop_cfg.frame_pos}-{crop_cfg.frame_count})_before.png'
+            _path = os.path.join(path, image_name)
+            imwrite(_path, crop_cfg.boxedFrame)
+            print(f"\n[INFO]\t Saved current frame              : {_path}")
+
+            image_name = f'{_vid_name}_({crop_cfg.frame_pos}-{crop_cfg.frame_count})_after.png'
+            _path = os.path.join(path, image_name)
+            imwrite(_path, _frame[_y: (_y + _h), _x: (_x + _w)])
+            print(f"[INFO]\t Saved current frame in crop area : {_path}")
+            
+        else:
+            # Crop Area control
+            cropPos = resizeCropInfo(key, cropPos, crop_cfg.frame_width, crop_cfg.frame_height)
+
+    if not crop_cfg.isPaused:
+        crop_cfg.frame_pos = int(crop_cfg.captured_vid.get(cv2.CAP_PROP_POS_FRAMES))
+        crop_cfg.frame_count = int(crop_cfg.captured_vid.get(cv2.CAP_PROP_FRAME_COUNT))
+    
+    if(crop_cfg.frame_pos >= crop_cfg.frame_count):
+        retCode = 1
+
+    # When paused, hold current frame untill unpause.
+    if crop_cfg.isPaused:
+        # deep copy current frame, use that frame for draw rectangle.
+        crop_cfg.boxedFrame = copy.deepcopy(crop_cfg.cleanFrame)
+        cv2.rectangle(crop_cfg.boxedFrame, (cropPos[2], cropPos[3]), (cropPos[2] + cropPos[0],
+                cropPos[3] + cropPos[1]), (0, 0, 255), thickness=2, lineType=cv2.LINE_8)
+        cv2.imshow(f'{crop_cfg.vid_name}', crop_cfg.boxedFrame)
+    else :
+        _, crop_cfg.frame = crop_cfg.captured_vid.read()
+        # deep copy current frame for clean preview.
+        crop_cfg.cleanFrame = copy.deepcopy(crop_cfg.frame)
+        cv2.rectangle(crop_cfg.frame, (cropPos[2], cropPos[3]), (cropPos[2] + cropPos[0],
+                cropPos[3] + cropPos[1]), (0, 0, 255), thickness=2, lineType=cv2.LINE_8)    
+        cv2.imshow(f'{crop_cfg.vid_name}', crop_cfg.frame)
+        crop_cfg.boxedFrame = copy.deepcopy(crop_cfg.frame)
+
+        
+        print("[INFO]\t Current crop area : ", end="")
+        print(cropPos, end="")
+        print(f"\t Frame Count ({crop_cfg.frame_pos}/{crop_cfg.frame_count})\t[PRESS \"h\" TO VIEW KEY GUIDE]", end="\r") 
+        
+    return retCode, cropPos
+
+def ffmpeg_encoding(args, vid_index, vid_num, cropPos, vid_name, fpath):
+    uhd_output = args.uhd_output
+    debug = args.debug
+    add_letterbox = args.add_letterbox
+    output_dir = args.output_dir
+    add_sharpening = args.add_sharpening
+    manual_mode = args.manual_mode
+    crf = args.crf
+    
+    uhd_output_args = ""
+    if uhd_output :
+        uhd_output_args = "-s 3840x2160"
+
+    debug_shortOutput = ""
+    if debug :
+        debug_shortOutput = "-t 15 -ss 30"
+    
+    crop_arg = f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]}"
+    print(f"[INFO]\t [CropInfo] (W : {cropPos[0]}), (H : {cropPos[1]}), (X : {cropPos[2]}), (Y : {cropPos[3]})")
+
+    crop_arg = f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]}"
+    current_crop_ratio = cropPos[0] / cropPos[1]
+    scale_arg = ""
+    pad_arg = ""
+
+    """
+    Set padding(letter box) argument
+    variable "offset" for 16:9 output display ratio
+
+    pad_arg syntax:
+        pad= {width after padding}:{height after padding}:{x offset of pad}:{y offset of pad}
+    """
+    if add_letterbox :
+        # Always target 16:9 display ratio
+        target_ratio = 16 / 9
+        print("[INFO]\t Target ratio : %.7f" %target_ratio)
+
+        # when current ratio is more flat
+        if target_ratio < current_crop_ratio:
+            # offset : simple equation (widht / (height + offset) = 16/9)
+            offset = (9 * cropPos[0] - 16 * cropPos[1]) / 16
+            tmp_height = cropPos[1] + offset
+            tmp_height = int(tmp_height)
+            if (tmp_height % 4) != 0:
+                tmp_height -= (tmp_height % 4)
+            pad_arg = f",pad={cropPos[0]}:{tmp_height}:(ow-iw)/2:(ih-oh)/2"
+            scale_arg = f",scale=w={cropPos[0]}:h={tmp_height}"
+            print(f"[INFO]\t [PadInfo] (W : {cropPos[0]}), (H : {tmp_height})")
+        else:
+            offset = (16 * cropPos[1] - 9 * cropPos[0]) / 9
+            tmp_width = cropPos[0] + offset
+            tmp_width = int(tmp_width)
+            if (tmp_width % 4) != 0:
+                tmp_width -= (tmp_width % 4)
+            pad_arg = f",pad={tmp_width}:{cropPos[1]}:(ow-iw)/2:(ih-oh)/2"
+            scale_arg = f",scale=w={tmp_width}:h={cropPos[1]}"
+            print(f"[INFO]\t [PadInfo] (W : {tmp_width}), (H : {cropPos[1]})")
+
+    if not os.path.exists(output_dir) :
+        os.mkdir(output_dir)
+        print(f'[INFO]\t folder created : {output_dir}')
+
+    output_path = os.path.join(output_dir, f"{vid_name}_box.mov")
+    
+    ## ffmpeg command setting
+    if add_sharpening :
+        sharpen_arg = ',unsharp=7:7:1.5:7:7:1.5'
+    else :
+        sharpen_arg = ''
+    '''
+    ffmpeg arguments
+    -stats : print only encoding progress status (ignore loglevel argument)
+    -loglevel : make ffmpeg stdout more verbose or not
+        warning : only warning, error
+        error : only errors
+        fatal : only fatal (crash) errors
+        info : defualt
+    '''
+    loglevel = 'fatal'
+    ffmpeg_command = f"ffmpeg {debug_shortOutput} -i \"{fpath}\" -vf \"{crop_arg}{scale_arg}{pad_arg}{sharpen_arg}\"\
+        -y -pix_fmt yuv420p -c:v libx264 -crf {crf} -c:a copy -preset medium -loglevel {loglevel}\
+        {uhd_output_args} \"{output_path}\""
+    print(ffmpeg_command)
+    print("[INFO]\t Encoding \"%s\" ..." % vid_name)    
+    print("[INFO]\t Video CRF = %d" % int(crf))
+
+    # duration_list[0] : hour, [1] : min, [2] : sec
+    duration_list = getVideDuration(fpath)
+    print(f"[INFO]\t Video Duration : {duration_list[0]:02d}:{duration_list[1]:02d}:{duration_list[2]:02d}\
+        Current Time : {getTime()}")
+    # st_time = time.time()
+    
+    vid_index += 1
+    if manual_mode:
+        # Manual Mode (always encoding one by one)
+        # Hold process when encoding last video 
+        if vid_index == vid_num :
+            subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait()
+        else :
+            subprocess.Popen(ffmpeg_command, shell=False)
+    else:
+        # Log file mode (encoding simultaneously n videos)
+        if args.multi_encoding == 0:
+            p = subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait()
+            
+            # [21.12.08] progress status coding..
+            # p = subprocess.Popen(ffmpeg_command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            # while p.poll() is None:
+            #     # print('now encoding..', end='\r')
+            #     infos = p.stderr.read().decode('utf-8')
+            #     print('h',infos)
+            #     infos = p.stdout.read().decode('utf-8')
+            #     print('t',infos)
+            #     continue
+        elif (vid_index % args.multi_encoding == 0) or (vid_index == vid_num):
+            subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait()
+        else :
+            subprocess.Popen(ffmpeg_command, shell=False)
+    

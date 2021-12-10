@@ -1,2 +1,7 @@
+__pycache__/*
 .vscode/*
 backups/*
+input/*
+logs/*
+out/*
+test_video/*
