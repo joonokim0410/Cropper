@@ -30,6 +30,7 @@ def main():
     manual_mode = args.manual_mode
     edit_mode = args.edit_mode
     input_dir = args.input_dir
+    output_dir = args.output_dir
     logs_dir = input_dir
 
     if args.cropsize_scale < 1 :
@@ -44,6 +45,8 @@ def main():
         input_list += glob.glob(os.path.join(input_dir, types))
     input_list = sorted(input_list)
     print("[INFO]\t Input dir :", input_dir)
+    print("[INFO]\t Ouput dir :", output_dir)
+    print("")
     
     for vid_index, fpath in enumerate(input_list):
         vid_name = os.path.basename(fpath)[:-4]
@@ -83,6 +86,7 @@ def main():
                 elif retCode == 2:
                     crop_cfg.getVidInfo(fpath)
                     continue
+            print("")
                     
             crop_cfg.vidRelease()
             cv2.destroyAllWindows()

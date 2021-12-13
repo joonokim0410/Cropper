@@ -164,14 +164,12 @@ def ffmpeg_encoding(args, vid_index, vid_num, cropPos, vid_name, fpath):
     debug_shortOutput = ""
     if debug :
         debug_shortOutput = "-t 15 -ss 30"
-    
-    crop_arg = f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]}"
-    print(f"[INFO]\t [CropInfo] (W : {cropPos[0]}), (H : {cropPos[1]}), (X : {cropPos[2]}), (Y : {cropPos[3]})")
 
     crop_arg = f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]}"
     current_crop_ratio = cropPos[0] / cropPos[1]
     scale_arg = ""
     pad_arg = ""
+    output_width, output_height = cropPos[0], cropPos[1]
 
     """
     Set padding(letter box) argument
@@ -183,8 +181,6 @@ def ffmpeg_encoding(args, vid_index, vid_num, cropPos, vid_name, fpath):
     if add_letterbox :
         # Always target 16:9 display ratio
         target_ratio = 16 / 9
-        print("[INFO]\t Target ratio : %.7f" %target_ratio)
-
         # when current ratio is more flat
         if target_ratio < current_crop_ratio:
             # offset : simple equation (widht / (height + offset) = 16/9)
@@ -195,7 +191,7 @@ def ffmpeg_encoding(args, vid_index, vid_num, cropPos, vid_name, fpath):
                 tmp_height -= (tmp_height % 4)
             pad_arg = f",pad={cropPos[0]}:{tmp_height}:(ow-iw)/2:(ih-oh)/2"
             scale_arg = f",scale=w={cropPos[0]}:h={tmp_height}"
-            print(f"[INFO]\t [PadInfo] (W : {cropPos[0]}), (H : {tmp_height})")
+            output_width, output_height = cropPos[0], tmp_height
         else:
             offset = (16 * cropPos[1] - 9 * cropPos[0]) / 9
             tmp_width = cropPos[0] + offset
@@ -204,11 +200,11 @@ def ffmpeg_encoding(args, vid_index, vid_num, cropPos, vid_name, fpath):
                 tmp_width -= (tmp_width % 4)
             pad_arg = f",pad={tmp_width}:{cropPos[1]}:(ow-iw)/2:(ih-oh)/2"
             scale_arg = f",scale=w={tmp_width}:h={cropPos[1]}"
-            print(f"[INFO]\t [PadInfo] (W : {tmp_width}), (H : {cropPos[1]})")
-
+            output_width, output_height = tmp_width, cropPos[1]
+            
     if not os.path.exists(output_dir) :
         os.mkdir(output_dir)
-        print(f'[INFO]\t folder created : {output_dir}')
+        # print(f'[INFO]\t folder created : {output_dir}')
 
     output_path = os.path.join(output_dir, f"{vid_name}_box.mov")
     
@@ -230,14 +226,29 @@ def ffmpeg_encoding(args, vid_index, vid_num, cropPos, vid_name, fpath):
     ffmpeg_command = f"ffmpeg {debug_shortOutput} -i \"{fpath}\" -vf \"{crop_arg}{scale_arg}{pad_arg}{sharpen_arg}\"\
         -y -pix_fmt yuv420p -c:v libx264 -crf {crf} -c:a copy -preset medium -loglevel {loglevel}\
         {uhd_output_args} \"{output_path}\""
-    print(ffmpeg_command)
-    print("[INFO]\t Encoding \"%s\" ..." % vid_name)    
-    print("[INFO]\t Video CRF = %d" % int(crf))
-
-    # duration_list[0] : hour, [1] : min, [2] : sec
     duration_list = getVideDuration(fpath)
-    print(f"[INFO]\t Video Duration : {duration_list[0]:02d}:{duration_list[1]:02d}:{duration_list[2]:02d}\
-        Current Time : {getTime()}")
+    vid_hour = duration_list[0]
+    vid_min = duration_list[1]
+    vid_sec = duration_list[2]
+    # print("====================================================================")
+    print("[INFO]\t Encoding start \"%s\" ..." % vid_name)    
+    print("[INFO]\t Video CRF           : %d" % int(crf))
+    print("[INFO]\t Video Duration      : %02d:%02d:%02d" % (vid_hour, vid_min, vid_sec))
+    print("[INFO]\t Pixel format        : YUV420p")
+    print("[INFO]\t Video Codec         : libx264")
+    print("[INFO]\t Encoding Preset     : medium")
+    print(f"[INFO]\t Cropping Info       : [W : {cropPos[0]} H : {cropPos[1]} X : {cropPos[2]} Y : {cropPos[3]}]")
+    print("[INFO]\t Crop area ratio     : %.5f" %current_crop_ratio)
+    if add_letterbox :
+        print("[INFO]\t Target ratio        : %.5f" %target_ratio)
+    if uhd_output :
+        print("[INFO]\t Output Resolution   : 3840x2160")
+    else:
+        print("[INFO]\t Output Resolution   : %dx%d" %(output_width, output_height))
+    if add_sharpening :
+        print("[INFO]\t Sharpening arg      : %s" %sharpen_arg[1:])
+    print("====================================================================")
+
     # st_time = time.time()
     
     vid_index += 1
@@ -245,12 +256,18 @@ def ffmpeg_encoding(args, vid_index, vid_num, cropPos, vid_name, fpath):
         # Manual Mode (always encoding one by one)
         # Hold process when encoding last video 
         if vid_index == vid_num :
+            print(f"[INFO]\t Video Duration : {vid_hour:02d}:{vid_min:02d}:{vid_sec:02d}\
+                Current Time : {getTime()}")
             subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait()
         else :
             subprocess.Popen(ffmpeg_command, shell=False)
     else:
         # Log file mode (encoding simultaneously n videos)
         if args.multi_encoding == 0:
+            # duration_list[0] : hour, [1] : min, [2] : sec
+            duration_list = getVideDuration(fpath)
+            print(f"[INFO]\t Video Duration : {duration_list[0]:02d}:{duration_list[1]:02d}:{duration_list[2]:02d}\
+                Current Time : {getTime()}")
             p = subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait()
             
             # [21.12.08] progress status coding..
@@ -263,6 +280,10 @@ def ffmpeg_encoding(args, vid_index, vid_num, cropPos, vid_name, fpath):
             #     print('t',infos)
             #     continue
         elif (vid_index % args.multi_encoding == 0) or (vid_index == vid_num):
+            # duration_list[0] : hour, [1] : min, [2] : sec
+            duration_list = getVideDuration(fpath)
+            print(f"[INFO]\t Video Duration : {duration_list[0]:02d}:{duration_list[1]:02d}:{duration_list[2]:02d}\
+                Current Time : {getTime()}")
             subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait()
         else :
             subprocess.Popen(ffmpeg_command, shell=False)
