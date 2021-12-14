@@ -1,7 +1,9 @@
 from pillar_detection_utils import *
+import signal
 
 class VideoCropCfg():
     def __init__(self):
+        self.ffmpeg_process = []
         self.vid_name = ''
         
         self.frame_pos = 0
@@ -20,19 +22,20 @@ class VideoCropCfg():
         
     def getVidInfo(self, fpath):
         self.captured_vid = cv2.VideoCapture(fpath)
-        self.frame_width = self.captured_vid.get(cv2.CAP_PROP_FRAME_WIDTH)
-        self.frame_height = self.captured_vid.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        self.frame_width = int(self.captured_vid.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.frame_height = int(self.captured_vid.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.fps = self.captured_vid.get(cv2.CAP_PROP_FPS)
         
     def vidRelease(self):
         self.captured_vid.release()
 
-def video_croppping(crop_cfg, cropPos):
+def videoCropping(crop_cfg, cropPos):
     '''
     retCode value mean
     0 : keep playing
     1 : done with cropping (to next vid)
     2 : replay
+    3 : program exit
     '''
     retCode = 0
     
@@ -44,8 +47,8 @@ def video_croppping(crop_cfg, cropPos):
 
     # Close button(X button) event
     if cv2.getWindowProperty(f'{crop_cfg.vid_name}', cv2.WND_PROP_VISIBLE) < 1 :
-        retCode = 1
-        return retCode, cropPos
+        retCode = 3
+        return retCode, []
 
     if key > 0 :
         # 13 == Enter key ASCII Code
@@ -76,9 +79,11 @@ def video_croppping(crop_cfg, cropPos):
             print("[INFO]\t ############################################################################################################################################################################ ")
         # Skip this Vid
         elif key == ord('n') or key == ord('N'):
+            print("")
             print(f"[INFO]\t Skip this video")
             crop_cfg.isSkipped = True
             retCode = 1
+            return retCode, []
         # Preview this crop area on new window
         elif key == ord('v') or key == ord('V'):
             _x = cropPos[2]
@@ -113,7 +118,6 @@ def video_croppping(crop_cfg, cropPos):
             _path = os.path.join(path, image_name)
             imwrite(_path, _frame[_y: (_y + _h), _x: (_x + _w)])
             print(f"[INFO]\t Saved current frame in crop area : {_path}")
-            
         else:
             # Crop Area control
             cropPos = resizeCropInfo(key, cropPos, crop_cfg.frame_width, crop_cfg.frame_height)
@@ -124,31 +128,32 @@ def video_croppping(crop_cfg, cropPos):
     
     if(crop_cfg.frame_pos >= crop_cfg.frame_count):
         retCode = 1
-
-    # When paused, hold current frame untill unpause.
-    if crop_cfg.isPaused:
-        # deep copy current frame, use that frame for draw rectangle.
-        crop_cfg.boxedFrame = copy.deepcopy(crop_cfg.cleanFrame)
-        cv2.rectangle(crop_cfg.boxedFrame, (cropPos[2], cropPos[3]), (cropPos[2] + cropPos[0],
-                cropPos[3] + cropPos[1]), (0, 0, 255), thickness=2, lineType=cv2.LINE_8)
-        cv2.imshow(f'{crop_cfg.vid_name}', crop_cfg.boxedFrame)
     else :
-        _, crop_cfg.frame = crop_cfg.captured_vid.read()
-        # deep copy current frame for clean preview.
-        crop_cfg.cleanFrame = copy.deepcopy(crop_cfg.frame)
-        cv2.rectangle(crop_cfg.frame, (cropPos[2], cropPos[3]), (cropPos[2] + cropPos[0],
-                cropPos[3] + cropPos[1]), (0, 0, 255), thickness=2, lineType=cv2.LINE_8)    
-        cv2.imshow(f'{crop_cfg.vid_name}', crop_cfg.frame)
-        crop_cfg.boxedFrame = copy.deepcopy(crop_cfg.frame)
-
+        # When paused, hold current frame untill unpause.
+        if crop_cfg.isPaused:
+            # deep copy current frame, use that frame for draw rectangle.
+            crop_cfg.boxedFrame = copy.deepcopy(crop_cfg.cleanFrame)
+            cv2.rectangle(crop_cfg.boxedFrame, (cropPos[2], cropPos[3]), (cropPos[2] + cropPos[0],
+                    cropPos[3] + cropPos[1]), (0, 0, 255), thickness=2, lineType=cv2.LINE_8)
+            cv2.imshow(f'{crop_cfg.vid_name}', crop_cfg.boxedFrame)
+        else :
+            _, crop_cfg.frame = crop_cfg.captured_vid.read()
+            # deep copy current frame for clean preview.
+            crop_cfg.cleanFrame = copy.deepcopy(crop_cfg.frame)
+            cv2.rectangle(crop_cfg.frame, (cropPos[2], cropPos[3]), (cropPos[2] + cropPos[0],
+                    cropPos[3] + cropPos[1]), (0, 0, 255), thickness=2, lineType=cv2.LINE_8)    
+            cv2.imshow(f'{crop_cfg.vid_name}', crop_cfg.frame)
+            crop_cfg.boxedFrame = copy.deepcopy(crop_cfg.frame)
         
         print("[INFO]\t Current crop area : ", end="")
         print(cropPos, end="")
         print(f"\t Frame Count ({crop_cfg.frame_pos}/{crop_cfg.frame_count})\t[PRESS \"h\" TO VIEW KEY GUIDE]", end="\r") 
-        
+    
     return retCode, cropPos
 
-def ffmpeg_encoding(args, vid_index, vid_num, cropPos, vid_name, fpath):
+def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_process):
+    retCode = -1
+    
     uhd_output = args.uhd_output
     debug = args.debug
     add_letterbox = args.add_letterbox
@@ -217,26 +222,27 @@ def ffmpeg_encoding(args, vid_index, vid_num, cropPos, vid_name, fpath):
     ffmpeg arguments
     -stats : print only encoding progress status (ignore loglevel argument)
     -loglevel : make ffmpeg stdout more verbose or not
+        quiet   : no logs
         warning : only warning, error
-        error : only errors
-        fatal : only fatal (crash) errors
-        info : defualt
+        error   : only errors
+        fatal   : only fatal (crash) errors
+        info    : defualt
     '''
-    loglevel = 'fatal'
+    loglevel = 'quiet'
     ffmpeg_command = f"ffmpeg {debug_shortOutput} -i \"{fpath}\" -vf \"{crop_arg}{scale_arg}{pad_arg}{sharpen_arg}\"\
         -y -pix_fmt yuv420p -c:v libx264 -crf {crf} -c:a copy -preset medium -loglevel {loglevel}\
         {uhd_output_args} \"{output_path}\""
-    duration_list = getVideDuration(fpath)
-    vid_hour = duration_list[0]
-    vid_min = duration_list[1]
-    vid_sec = duration_list[2]
+    vid_duration = getVideDuration(fpath)
+    vid_hour = vid_duration[0]
+    vid_min = vid_duration[1]
+    vid_sec = vid_duration[2]
     # print("====================================================================")
     print("[INFO]\t Encoding start \"%s\" ..." % vid_name)    
-    print("[INFO]\t Video CRF           : %d" % int(crf))
+    print("[INFO]\t CRF                 : %d" % int(crf))
     print("[INFO]\t Video Duration      : %02d:%02d:%02d" % (vid_hour, vid_min, vid_sec))
     print("[INFO]\t Pixel format        : YUV420p")
-    print("[INFO]\t Video Codec         : libx264")
-    print("[INFO]\t Encoding Preset     : medium")
+    print("[INFO]\t Encoding Codec      : libx264")
+    print("[INFO]\t Ffmpeg Preset       : medium")
     print(f"[INFO]\t Cropping Info       : [W : {cropPos[0]} H : {cropPos[1]} X : {cropPos[2]} Y : {cropPos[3]}]")
     print("[INFO]\t Crop area ratio     : %.5f" %current_crop_ratio)
     if add_letterbox :
@@ -252,39 +258,44 @@ def ffmpeg_encoding(args, vid_index, vid_num, cropPos, vid_name, fpath):
     # st_time = time.time()
     
     vid_index += 1
-    if manual_mode:
-        # Manual Mode (always encoding one by one)
-        # Hold process when encoding last video 
-        if vid_index == vid_num :
-            print(f"[INFO]\t Video Duration : {vid_hour:02d}:{vid_min:02d}:{vid_sec:02d}\
-                Current Time : {getTime()}")
-            subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait()
-        else :
-            subprocess.Popen(ffmpeg_command, shell=False)
-    else:
-        # Log file mode (encoding simultaneously n videos)
-        if args.multi_encoding == 0:
-            # duration_list[0] : hour, [1] : min, [2] : sec
-            duration_list = getVideDuration(fpath)
-            print(f"[INFO]\t Video Duration : {duration_list[0]:02d}:{duration_list[1]:02d}:{duration_list[2]:02d}\
-                Current Time : {getTime()}")
-            p = subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait()
-            
-            # [21.12.08] progress status coding..
-            # p = subprocess.Popen(ffmpeg_command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            # while p.poll() is None:
-            #     # print('now encoding..', end='\r')
-            #     infos = p.stderr.read().decode('utf-8')
-            #     print('h',infos)
-            #     infos = p.stdout.read().decode('utf-8')
-            #     print('t',infos)
-            #     continue
-        elif (vid_index % args.multi_encoding == 0) or (vid_index == vid_num):
-            # duration_list[0] : hour, [1] : min, [2] : sec
-            duration_list = getVideDuration(fpath)
-            print(f"[INFO]\t Video Duration : {duration_list[0]:02d}:{duration_list[1]:02d}:{duration_list[2]:02d}\
-                Current Time : {getTime()}")
-            subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait()
-        else :
-            subprocess.Popen(ffmpeg_command, shell=False)
+    start_time = getTime()
+    try:
+        if manual_mode:
+            # Manual Mode (always cropping one by one)
+            # Hold process when encoding last video 
+            if vid_index == vid_num :
+                print(f"[INFO]\t Video Duration : {vid_hour:02d}:{vid_min:02d}:{vid_sec:02d}\
+                    Start Time : {getTime('string')}")
+                ffmpeg_process.append(subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait())
+            else :
+                ffmpeg_process.append(subprocess.Popen(ffmpeg_command, shell=False))
+        else:
+            # Log file mode (encoding simultaneously n videos)
+            if args.multi_encoding == 0:
+                subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait()
+                
+            elif (vid_index % args.multi_encoding == 0) or (vid_index == vid_num):
+                print(f"[INFO]\t Video Duration : {vid_hour:02d}:{vid_min:02d}:{vid_sec:02d}\
+                    Start Time : {getTime('string')}")
+                p = subprocess.Popen(ffmpeg_command + ' -stats', shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
+                ffmpeg_process.append(p.pid)
+                while p.poll() is None:
+                    displayRemainTime(vid_duration, p.stderr, start_time)
+            else :
+                p = subprocess.Popen(ffmpeg_command, shell=False)
+                ffmpeg_process.append(p.pid)
+                
+            retCode = 0
+    except Exception as e :
+        print('[!!! ERROR !!!]\t', e)
+        # print(ffmpeg_process)
+        # for p in ffmpeg_process :
+        #     print('terminate')
+        #     os.killpg(os.getpgid(p, signal.SIGTERM))
+        #     # p.terminate()
+        #     # p.kill()
+                
+        retCode = -1
+    finally :
+        return retCode
     

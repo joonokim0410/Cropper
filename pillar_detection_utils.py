@@ -9,6 +9,53 @@ import copy
 import datetime
 import time
 
+def getTime(tformat = None):
+    dt_now = datetime.datetime.now()
+    dt_str = dt_now.strftime('[%Y-%m-%d %H:%M:%S]')
+    if tformat == 'string' :
+        out = dt_str
+    else:
+        out = dt_now
+    # print(dt_now + datetime.timedelta(hours=1))
+
+    return out
+
+def timeToSecond(time_stamp):
+    return (time_stamp[0] * 3600) + (time_stamp[1] * 60) + (time_stamp[2])
+
+def displayRemainTime(vid_duration, ffmpeg_stream, start_time):
+    #TODO : now encoding... [percentage] [ETA : yyyy-mm-dd hh:mm:ss]
+    # infos (ex)= "frame=  228 fps= 37 q=26.0 size=    3840kB time=00:00:08.08 bitrate=3890.7kbits/s speed=1.31x"
+    infos = ffmpeg_stream.readline()
+    # parsing time stamp
+    time_stamp = re.findall("time=\S+", infos)
+    if time_stamp != []:
+        '''
+        parsing process
+        1. List type to String type
+        2. lid of "time=" string
+        3. get each time arguments (h:m:s)
+        4. String type to Int type
+        '''
+        time_stamp = time_stamp[0]
+        time_stamp = time_stamp[5:]
+        time_stamp = time_stamp.split(':')
+        time_stamp = [int(float(x)) for x in time_stamp]
+        # current_percentage
+        current_progress_sec = timeToSecond(time_stamp)
+        total_progress_sec = timeToSecond(vid_duration)
+        current_percentage = (current_progress_sec / total_progress_sec) * 100
+        
+        # eta_time
+        passed_time = getTime() - start_time
+        passed_time = passed_time.total_seconds()
+        encoding_speed = current_percentage / passed_time
+        eta = (100 - current_percentage) / encoding_speed
+        eta_time = datetime.datetime.now() + datetime.timedelta(seconds=eta)
+        eta_time = eta_time.strftime('[ETA : %Y-%m-%d %H:%M:%S]')
+        print(f"[INFO]\t now encoding ... {eta_time} [{current_percentage:.2f}%] [Speed : {encoding_speed:.2f} %/s]", end='\r')
+    
+
 def resizeCropInfo(key, cropPos, frame_width, frame_height):
 # Adjust crop info in display layout.
     def _IsOutOfBound(_cropPos):
@@ -59,13 +106,6 @@ def resizeCropInfo(key, cropPos, frame_width, frame_height):
         cropPos = _cropPos
 
     return cropPos
-
-def getTime():
-    dt_now = datetime.datetime.now()
-    dt_str = dt_now.strftime('[%Y-%m-%d %H:%M:%S]')
-    # print(dt_str)
-
-    return dt_str
 
 def getVideDuration(file_path):
     ffprobe_command = f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{file_path}\""
@@ -164,15 +204,15 @@ def autoDetectCropArea(fpath):
     
     print("[INFO]\t Detecting crop area...")
     p = subprocess.Popen(["ffmpeg", "-ss", "10", "-i", fpath, "-vf", "cropdetect=limit=38",
-                        "-vframes", "3000", "-f", "null", "out.null"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    infos = p.stderr.read().decode('utf-8')
+                        "-vframes", "3000", "-f", "null", "out.null"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
+    infos = p.stderr.read()
     allCrops = re.findall("crop=\S+", infos)
     mostCommonCrop = Counter(allCrops).most_common(1)
 
     if len(mostCommonCrop) > 0 :
         crop = mostCommonCrop[0][0]
     else :
-        print(f"[!!! ERROR !!!]\t Can`t read input vid. Skip to next vid \t ({fpath})")
+        print(f"[!!! ERROR !!!]\t Can`t auto detect crop area \t ({fpath})")
         return cropPos
 
     # Delete "crop=" in list "crop"
@@ -183,7 +223,7 @@ def autoDetectCropArea(fpath):
     
     return cropPos
 
-def adjustCropArea(cropPos):
+def adjustCropArea(cropPos, frame_width, frame_height):
     # Crop Area even num check
     if (cropPos[0] % 2) != 0 :
         if (cropPos[0] + 1) >= frame_width:
@@ -191,7 +231,7 @@ def adjustCropArea(cropPos):
         else:
             cropPos[0] += 1
     if (cropPos[1] % 2) != 0 :
-        if (cropPos[1] + 1) >= frame_width:
+        if (cropPos[1] + 1) >= frame_height:
             cropPos[1] -= 1
         else:
             cropPos[1] += 1
@@ -203,7 +243,7 @@ def adjustCropArea(cropPos):
         else:
             cropPos[0] += 2
     if (cropPos[1] % 4) != 0 :
-        if (cropPos[1] + 2) >= frame_width:
+        if (cropPos[1] + 2) >= frame_height:
             cropPos[1] -= 2
         else:
             cropPos[1] += 2

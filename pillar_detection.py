@@ -17,11 +17,10 @@ parser.add_argument("-d", "--debug", default=False, action="store_true", help="f
 # logfile option
 parser.add_argument("-s", "--cropsize_scale", default=1, type=int, help="before use crop size from logfile, scale up the crop size (for reuse when vid rescaled)")
 parser.add_argument("-log", "--only_logfile", default=False, action="store_true", help="large vid mode. (only write log file.)")
-parser.add_argument("-man", "--manual_mode", default=False, action="store_true", help="manual cropping without using log file (Ignore log files)")
+parser.add_argument("-manual", "--manual_mode", default=False, action="store_true", help="manual cropping without using log file (Ignore log files)")
 parser.add_argument("-edit", "--edit_mode", default=False, action="store_true", help="get first crop area from log file")
 
 args = parser.parse_args()
-
 # option when only write log file (no encoding) : -log
 # options when only edit log file that already exists (no encoding) : -log -edit
 
@@ -51,7 +50,6 @@ def main():
     for vid_index, fpath in enumerate(input_list):
         vid_name = os.path.basename(fpath)[:-4]
         vid_num = len(input_list)
-        isSkipped = False
         log_path = f"{logs_dir}/{vid_name}.txt"
         print(f"[INFO]\t [Video num : {vid_index + 1} / {vid_num}]")
         print("[INFO]\t File path: ", fpath)
@@ -75,29 +73,38 @@ def main():
             else :
                 cropPos = autoDetectCropArea(fpath)
             # Crop Area validation check (width, height must be even number)
-            cropPos = adjustCropArea(cropPos)
+            if cropPos == []:
+                cropPos = [crop_cfg.frame_width, crop_cfg.frame_height, 0, 0]
+            
+            cropPos = adjustCropArea(cropPos, crop_cfg.frame_width, crop_cfg.frame_height)
+            print(cropPos)
 
             cv2.namedWindow(f'{vid_name}', cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
             # Display crop size control UI
             while True:
-                retCode, cropPos = video_croppping(crop_cfg, cropPos)
+                retCode, cropPos = videoCropping(crop_cfg, cropPos)
                 if retCode == 1:
                     break
                 elif retCode == 2:
                     crop_cfg.getVidInfo(fpath)
                     continue
+                elif retCode == 3:
+                    print("")
+                    return
             print("")
                     
             crop_cfg.vidRelease()
             cv2.destroyAllWindows()
 
-            if not isSkipped:
+            if not crop_cfg.isSkipped:
                 writeLog(logs_dir, log_path, cropPos)
 
         # Set ffmpeg commands, actual ffmpeg encoding
-        if not (args.only_logfile or isSkipped):
-            ffmpeg_encoding(args, vid_index, vid_num, cropPos, vid_name, fpath)
+        if not (args.only_logfile or crop_cfg.isSkipped):
+            retCode = ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, crop_cfg.ffmpeg_process)
+            if retCode < 0 :
+                return retCode
 
 if __name__ == "__main__":
     main()
-    print("[INFO]\t Program End.")
+    print(f"\r\n Program End. end time : {getTime('string')}")
