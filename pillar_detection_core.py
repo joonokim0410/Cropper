@@ -270,6 +270,7 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
         print("[INFO]\t Output Resolution   : %dx%d" %(output_width, output_height))
     if add_sharpening :
         print("[INFO]\t Sharpening arg      : %s" %sharpen_arg[1:])
+    print("[INFO]\t Output File Name    : %s" %output_file_name)
     print("====================================================================")
 
     # st_time = time.time()
