@@ -161,14 +161,19 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
     add_sharpening = args.add_sharpening
     manual_mode = args.manual_mode
     crf = args.crf
+    fps = args.frame_rate
     
-    uhd_output_args = ""
-    if uhd_output :
-        uhd_output_args = "-s 3840x2160"
-
+    output_name_args = []
+    
     debug_shortOutput = ""
     if debug :
         debug_shortOutput = "-t 15 -ss 30"
+        output_name_args.append("debug")
+
+    uhd_output_args = ""
+    if uhd_output :
+        uhd_output_args = "-s 3840x2160"
+        output_name_args.append("uhd")
 
     crop_arg = f"crop={cropPos[0]}:{cropPos[1]}:{cropPos[2]}:{cropPos[3]}"
     current_crop_ratio = cropPos[0] / cropPos[1]
@@ -184,6 +189,7 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
         pad= {width after padding}:{height after padding}:{x offset of pad}:{y offset of pad}
     """
     if add_letterbox :
+        output_name_args.append("lb")
         # Always target 16:9 display ratio
         target_ratio = 16 / 9
         # when current ratio is more flat
@@ -211,13 +217,24 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
         os.mkdir(output_dir)
         # print(f'[INFO]\t folder created : {output_dir}')
 
-    output_path = os.path.join(output_dir, f"{vid_name}_box.mov")
-    
     ## ffmpeg command setting
     if add_sharpening :
         sharpen_arg = ',unsharp=7:7:1.5:7:7:1.5'
+        output_name_args.append("sharp")
     else :
         sharpen_arg = ''
+        
+    if fps > 0 :
+        output_name_args.append(f"fps{fps}")
+    elif fps == 0 :
+        print(f"[!!! ERROR !!!] invalid option. fps = {fps}")
+        
+    if len(output_name_args) > 0 :
+        output_file_name= f"{vid_name}_box({','.join(output_name_args)}).mov"    
+    else:
+        output_file_name= f"{vid_name}_box.mov"    
+    output_path = os.path.join(output_dir, output_file_name)
+    
     '''
     ffmpeg arguments
     -stats : print only encoding progress status (ignore loglevel argument)
@@ -229,7 +246,7 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
         info    : defualt
     '''
     loglevel = 'quiet'
-    ffmpeg_command = f"ffmpeg {debug_shortOutput} -i \"{fpath}\" -vf \"{crop_arg}{scale_arg}{pad_arg}{sharpen_arg}\"\
+    ffmpeg_command = f"ffmpeg {debug_shortOutput} -i \"{fpath}\" -r 29.97 -vf \"{crop_arg}{scale_arg}{pad_arg}{sharpen_arg}\"\
         -y -pix_fmt yuv420p -c:v libx264 -crf {crf} -c:a copy -preset medium -loglevel {loglevel}\
         {uhd_output_args} \"{output_path}\""
     vid_duration = getVideDuration(fpath)
@@ -259,8 +276,8 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
     
     vid_index += 1
     start_time = getTime()
-    try:
-        if manual_mode:
+    
+    if manual_mode:
             # Manual Mode (always cropping one by one)
             # Hold process when encoding last video 
             if vid_index == vid_num :
@@ -269,33 +286,62 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
                 ffmpeg_process.append(subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait())
             else :
                 ffmpeg_process.append(subprocess.Popen(ffmpeg_command, shell=False))
-        else:
-            # Log file mode (encoding simultaneously n videos)
-            if args.multi_encoding == 0:
-                subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait()
+    else:
+        # Log file mode (encoding simultaneously n videos)
+        if args.multi_encoding == 0:
+            subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait()
+            
+        elif (vid_index % args.multi_encoding == 0) or (vid_index == vid_num):
+            print(f"[INFO]\t Video Duration : {vid_hour:02d}:{vid_min:02d}:{vid_sec:02d}\
+                Start Time : {getTime('string')}")
+            p = subprocess.Popen(ffmpeg_command + ' -stats', shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
+            ffmpeg_process.append(p.pid)
+            while p.poll() is None:
+                displayRemainTime(vid_duration, p.stderr, start_time)
+        else :
+            p = subprocess.Popen(ffmpeg_command, shell=False)
+            ffmpeg_process.append(p.pid)
+            
+        retCode = 0
+        
+    return retCode
+    # try:
+    #     if manual_mode:
+    #         # Manual Mode (always cropping one by one)
+    #         # Hold process when encoding last video 
+    #         if vid_index == vid_num :
+    #             print(f"[INFO]\t Video Duration : {vid_hour:02d}:{vid_min:02d}:{vid_sec:02d}\
+    #                 Start Time : {getTime('string')}")
+    #             ffmpeg_process.append(subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait())
+    #         else :
+    #             ffmpeg_process.append(subprocess.Popen(ffmpeg_command, shell=False))
+    #     else:
+    #         # Log file mode (encoding simultaneously n videos)
+    #         if args.multi_encoding == 0:
+    #             subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait()
                 
-            elif (vid_index % args.multi_encoding == 0) or (vid_index == vid_num):
-                print(f"[INFO]\t Video Duration : {vid_hour:02d}:{vid_min:02d}:{vid_sec:02d}\
-                    Start Time : {getTime('string')}")
-                p = subprocess.Popen(ffmpeg_command + ' -stats', shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
-                ffmpeg_process.append(p.pid)
-                while p.poll() is None:
-                    displayRemainTime(vid_duration, p.stderr, start_time)
-            else :
-                p = subprocess.Popen(ffmpeg_command, shell=False)
-                ffmpeg_process.append(p.pid)
+    #         elif (vid_index % args.multi_encoding == 0) or (vid_index == vid_num):
+    #             print(f"[INFO]\t Video Duration : {vid_hour:02d}:{vid_min:02d}:{vid_sec:02d}\
+    #                 Start Time : {getTime('string')}")
+    #             p = subprocess.Popen(ffmpeg_command + ' -stats', shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
+    #             ffmpeg_process.append(p.pid)
+    #             while p.poll() is None:
+    #                 displayRemainTime(vid_duration, p.stderr, start_time)
+    #         else :
+    #             p = subprocess.Popen(ffmpeg_command, shell=False)
+    #             ffmpeg_process.append(p.pid)
                 
-            retCode = 0
-    except Exception as e :
-        print('[!!! ERROR !!!]\t', e)
-        # print(ffmpeg_process)
-        # for p in ffmpeg_process :
-        #     print('terminate')
-        #     os.killpg(os.getpgid(p, signal.SIGTERM))
-        #     # p.terminate()
-        #     # p.kill()
+    #         retCode = 0
+    # except Exception as e :
+    #     print('[!!! ERROR !!!]\t', e)
+    #     # print(ffmpeg_process)
+    #     # for p in ffmpeg_process :
+    #     #     print('terminate')
+    #     #     os.killpg(os.getpgid(p, signal.SIGTERM))
+    #     #     # p.terminate()
+    #     #     # p.kill()
                 
-        retCode = -1
-    finally :
-        return retCode
+    #     retCode = -1
+    # finally :
+    #     return retCode
     

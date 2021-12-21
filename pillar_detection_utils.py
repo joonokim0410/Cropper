@@ -45,6 +45,8 @@ def displayRemainTime(vid_duration, ffmpeg_stream, start_time):
         current_progress_sec = timeToSecond(time_stamp)
         total_progress_sec = timeToSecond(vid_duration)
         current_percentage = (current_progress_sec / total_progress_sec) * 100
+        if current_percentage == 0 :
+            current_percentage = 0.01
         
         # eta_time
         passed_time = getTime() - start_time

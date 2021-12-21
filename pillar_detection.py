@@ -8,9 +8,12 @@ parser.add_argument("-o", "--output_dir", default="./out", help="Output vid dire
 
 # ffmpeg encoding option
 parser.add_argument("-c", "--crf", default=20, type=int, help="set crf level")
+parser.add_argument("-fps", '-fr', "--frame_rate", default=-1, type=float, help="if minus value, same fps as input")
 parser.add_argument("-uhd", "--uhd_output", default=False, action="store_true", help="set output resolution to 3840:2160")
 parser.add_argument("-lb", "--add_letterbox", default=False, action="store_true", help="add letterbox to make 16:9 ratio")
 parser.add_argument("-sp", "--add_sharpening", default=False, action="store_true", help="add ffmpeg sharpening filter")
+
+# program option
 parser.add_argument("-mul", "--multi_encoding", default=2, type=int, help="when log file exist, encoding mutiple videos by this args")
 parser.add_argument("-d", "--debug", default=False, action="store_true", help="for debugging. (short length video output)")
 
