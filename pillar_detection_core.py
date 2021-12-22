@@ -224,8 +224,10 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
     else :
         sharpen_arg = ''
         
+    fps_arg = ""
     if fps > 0 :
         output_name_args.append(f"fps{fps}")
+        fps_arg = f"-r {fps}"
     elif fps == 0 :
         print(f"[!!! ERROR !!!] invalid option. fps = {fps}")
         
@@ -246,13 +248,15 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
         info    : defualt
     '''
     loglevel = 'quiet'
-    ffmpeg_command = f"ffmpeg {debug_shortOutput} -i \"{fpath}\" -r 29.97 -vf \"{crop_arg}{scale_arg}{pad_arg}{sharpen_arg}\"\
+    ffmpeg_command = f"ffmpeg {debug_shortOutput} -i \"{fpath}\" {fps_arg} -vf \"{crop_arg}{scale_arg}{pad_arg}{sharpen_arg}\"\
         -y -pix_fmt yuv420p -c:v libx264 -crf {crf} -c:a copy -preset medium -loglevel {loglevel}\
         {uhd_output_args} \"{output_path}\""
     vid_duration = getVideDuration(fpath)
     vid_hour = vid_duration[0]
     vid_min = vid_duration[1]
     vid_sec = vid_duration[2]
+    
+    print(ffmpeg_command)
     # print("====================================================================")
     print("[INFO]\t Encoding start \"%s\" ..." % vid_name)    
     print("[INFO]\t CRF                 : %d" % int(crf))
@@ -270,6 +274,8 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
         print("[INFO]\t Output Resolution   : %dx%d" %(output_width, output_height))
     if add_sharpening :
         print("[INFO]\t Sharpening arg      : %s" %sharpen_arg[1:])
+    if fps > 0 :
+        print("[INFO]\t Frame Rate          : %.2f" %fps)
     print("[INFO]\t Output File Name    : %s" %output_file_name)
     print("====================================================================")
 
