@@ -7,7 +7,7 @@ parser.add_argument("-i", "--input_dir", default="./input", help="Input source v
 parser.add_argument("-o", "--output_dir", default="./out", help="Output vid directory")
 
 # ffmpeg encoding option
-parser.add_argument("-c", "--crf", default=20, type=int, help="set crf level")
+parser.add_argument("-c", "--crf", default=18, type=int, help="set crf level")
 parser.add_argument("-fps", '-fr', "--frame_rate", default=-1, type=float, help="if minus value, same fps as input")
 parser.add_argument("-uhd", "--uhd_output", default=False, action="store_true", help="set output resolution to 3840:2160")
 parser.add_argument("-lb", "--add_letterbox", default=False, action="store_true", help="add letterbox to make 16:9 ratio")
@@ -50,6 +50,13 @@ def main():
     print("[INFO]\t Ouput dir :", output_dir)
     print("")
     
+    # for specific file process (use "/" not "\")
+    # input_dir = "Y:/Pixtree-NDA/SME/20211209_3차우선순위/output-20211222/source/"
+    # input_list = [
+    #     os.path.join(input_dir, "01. 샤이니_누난너무예뻐 MV_xfm_dec_ver3_edit.mov")
+    # ]
+    
+    crop_cfg = VideoCropCfg()
     for vid_index, fpath in enumerate(input_list):
         vid_name = os.path.basename(fpath)[:-4]
         vid_num = len(input_list)
@@ -59,7 +66,7 @@ def main():
         print("[INFO]\t Log dir :", logs_dir)
 
         # init crop configuration class
-        crop_cfg = VideoCropCfg()
+        # crop_cfg = VideoCropCfg()
         crop_cfg.vid_name = vid_name
         
         # Read log file if exist
@@ -80,7 +87,6 @@ def main():
                 cropPos = [crop_cfg.frame_width, crop_cfg.frame_height, 0, 0]
             
             cropPos = adjustCropArea(cropPos, crop_cfg.frame_width, crop_cfg.frame_height)
-            print(cropPos)
 
             cv2.namedWindow(f'{vid_name}', cv2.WINDOW_NORMAL | cv2.WINDOW_KEEPRATIO)
             # Display crop size control UI

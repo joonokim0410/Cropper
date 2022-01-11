@@ -284,6 +284,10 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
     vid_index += 1
     start_time = getTime()
     
+    '''
+    TODO : count running ffmpeg process aysnch.
+    '''
+    running_process = 0
     if manual_mode:
             # Manual Mode (always cropping one by one)
             # Hold process when encoding last video 
@@ -303,11 +307,13 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
                 Start Time : {getTime('string')}")
             p = subprocess.Popen(ffmpeg_command + ' -stats', shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
             ffmpeg_process.append(p.pid)
+            # print(ffmpeg_process)
             while p.poll() is None:
                 displayRemainTime(vid_duration, p.stderr, start_time)
         else :
             p = subprocess.Popen(ffmpeg_command, shell=False)
             ffmpeg_process.append(p.pid)
+            running_process += 1
             
         retCode = 0
         
