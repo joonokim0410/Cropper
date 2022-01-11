@@ -285,7 +285,7 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
     start_time = getTime()
     
     '''
-    TODO : count running ffmpeg process aysnch.
+    TODO : count running ffmpeg process asynch.
     '''
     running_process = 0
     if manual_mode:
