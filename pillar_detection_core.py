@@ -20,6 +20,8 @@ class VideoCropCfg():
         self.frame_height = 0
         self.fps = 0
         
+        self.temp_ivtc_dir = ''
+        
     def getVidInfo(self, fpath):
         self.captured_vid = cv2.VideoCapture(fpath)
         self.frame_width = int(self.captured_vid.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -42,7 +44,7 @@ def videoCropping(crop_cfg, cropPos):
     # search_distance unit : second
     search_distance = 5
     # play_speed unit : millisecond
-    play_speed = 10
+    play_speed = 18
     key = cv2.waitKeyEx(play_speed)
 
     # Close button(X button) event
@@ -134,14 +136,14 @@ def videoCropping(crop_cfg, cropPos):
             # deep copy current frame, use that frame for draw rectangle.
             crop_cfg.boxedFrame = copy.deepcopy(crop_cfg.cleanFrame)
             cv2.rectangle(crop_cfg.boxedFrame, (cropPos[2], cropPos[3]), (cropPos[2] + cropPos[0],
-                    cropPos[3] + cropPos[1]), (0, 0, 255), thickness=2, lineType=cv2.LINE_8)
+                    cropPos[3] + cropPos[1]), (0, 0, 255), thickness=1, lineType=cv2.LINE_8)
             cv2.imshow(f'{crop_cfg.vid_name}', crop_cfg.boxedFrame)
         else :
             _, crop_cfg.frame = crop_cfg.captured_vid.read()
             # deep copy current frame for clean preview.
             crop_cfg.cleanFrame = copy.deepcopy(crop_cfg.frame)
             cv2.rectangle(crop_cfg.frame, (cropPos[2], cropPos[3]), (cropPos[2] + cropPos[0],
-                    cropPos[3] + cropPos[1]), (0, 0, 255), thickness=2, lineType=cv2.LINE_8)    
+                    cropPos[3] + cropPos[1]), (0, 0, 255), thickness=1, lineType=cv2.LINE_8)    
             cv2.imshow(f'{crop_cfg.vid_name}', crop_cfg.frame)
             crop_cfg.boxedFrame = copy.deepcopy(crop_cfg.frame)
         
@@ -151,17 +153,20 @@ def videoCropping(crop_cfg, cropPos):
     
     return retCode, cropPos
 
-def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_process):
+def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, crop_cfg):
     retCode = -1
+    
+    output_dir = args.output_dir
+    temp_ivtc_dir = crop_cfg.temp_ivtc_dir
     
     uhd_output = args.uhd_output
     debug = args.debug
-    add_letterbox = args.add_letterbox
-    output_dir = args.output_dir
-    add_sharpening = args.add_sharpening
+    letterbox = args.letterbox
+    sharpening = args.sharpening
     manual_mode = args.manual_mode
-    crf = args.crf
     fps = args.frame_rate
+    
+    ffmpeg_process = crop_cfg.ffmpeg_process
     
     output_name_args = []
     
@@ -188,7 +193,7 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
     pad_arg syntax:
         pad= {width after padding}:{height after padding}:{x offset of pad}:{y offset of pad}
     """
-    if add_letterbox :
+    if letterbox :
         output_name_args.append("lb")
         # Always target 16:9 display ratio
         target_ratio = 16 / 9
@@ -200,7 +205,7 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
             tmp_height = int(tmp_height)
             if (tmp_height % 4) != 0:
                 tmp_height -= (tmp_height % 4)
-            pad_arg = f",pad={cropPos[0]}:{tmp_height}:(ow-iw)/2:(ih-oh)/2"
+            pad_arg = f",pad={cropPos[0]}:{tmp_height}:(ow-iw)/2:(oh-ih)/2"
             scale_arg = f",scale=w={cropPos[0]}:h={tmp_height}"
             output_width, output_height = cropPos[0], tmp_height
         else:
@@ -209,7 +214,7 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
             tmp_width = int(tmp_width)
             if (tmp_width % 4) != 0:
                 tmp_width -= (tmp_width % 4)
-            pad_arg = f",pad={tmp_width}:{cropPos[1]}:(ow-iw)/2:(ih-oh)/2"
+            pad_arg = f",pad={tmp_width}:{cropPos[1]}:(ow-iw)/2:(oh-ih)/2"
             scale_arg = f",scale=w={tmp_width}:h={cropPos[1]}"
             output_width, output_height = tmp_width, cropPos[1]
             
@@ -218,21 +223,31 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
         # print(f'[INFO]\t folder created : {output_dir}')
 
     ## ffmpeg command setting
-    if add_sharpening :
-        sharpen_arg = ',unsharp=7:7:1.5:7:7:1.5'
-        output_name_args.append("sharp")
-    else :
-        sharpen_arg = ''
-        
     fps_arg = ""
+    sharpen_arg = ""
+    crf = args.crf
+    if crf >= 0 :
+        output_name_args.append(f"crf{crf}")
+    elif crf < 0 :
+        print(f"[!!! ERROR !!!] invalid option. fps = {crf}")
+        crf = 0
     if fps > 0 :
         output_name_args.append(f"fps{fps}")
         fps_arg = f"-r {fps}"
     elif fps == 0 :
         print(f"[!!! ERROR !!!] invalid option. fps = {fps}")
+    if args.uhd_output :
+        output_name_args.append(f"uhd")
+    if args.letterbox :
+        output_name_args.append(f"lb")
+    if sharpening :
+        sharpen_arg = ',unsharp=7:7:1.5:7:7:1.5'
+        output_name_args.append("sharp")
+    if args.inverse_telecine != False:
+        output_name_args.append(args.inverse_telecine)
         
     if len(output_name_args) > 0 :
-        output_file_name= f"{vid_name}_box({','.join(output_name_args)}).mov"    
+        output_file_name= f"{vid_name}_box({'_'.join(output_name_args)}).mov"    
     else:
         output_file_name= f"{vid_name}_box.mov"    
     output_path = os.path.join(output_dir, output_file_name)
@@ -248,17 +263,36 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
         info    : defualt
     '''
     loglevel = 'quiet'
-    ffmpeg_command = f"ffmpeg {debug_shortOutput} -i \"{fpath}\" {fps_arg} -vf \"{crop_arg}{scale_arg}{pad_arg}{sharpen_arg}\"\
-        -y -pix_fmt yuv420p -c:v libx264 -crf {crf} -c:a copy -preset medium -loglevel {loglevel}\
-        {uhd_output_args} \"{output_path}\""
+    if args.inverse_telecine != False :
+        temp_ivtc_path = f"\"{temp_ivtc_dir}/{vid_name}_crf0_fm.mov\""
+        
+        if args.inverse_telecine == 'fmbw':
+            ffmpeg_ivtc_command = f"ffmpeg -y -i \"{fpath}\" -vf fieldmatch=mode=pc_n:combmatch=full,bwdif=0:-1:1 -c:v libx264 -crf 0 -preset ultrafast \
+                                    -stats -loglevel {loglevel} {temp_ivtc_path}"
+        elif args.inverse_telecine == 'bw':
+            ffmpeg_ivtc_command = f"ffmpeg -y -i \"{fpath}\" -vf bwdif=0:-1:1 -c:v libx264 -crf 0 -preset ultrafast \
+                                    -stats -loglevel {loglevel} {temp_ivtc_path}"
+        else:
+            ffmpeg_ivtc_command = f"ffmpeg -y -i \"{fpath}\" -vf fieldmatch=mode=pc_n:combmatch=full -c:v libx264 -crf 0 -preset ultrafast \
+                                    -stats -loglevel {loglevel} {temp_ivtc_path}"        
+        
+        ffmpeg_command = f"ffmpeg {debug_shortOutput} -i {temp_ivtc_path} {fps_arg} -vf \"{crop_arg}{scale_arg}{pad_arg}{sharpen_arg}\"\
+            -y -pix_fmt yuv420p -c:v libx264 -crf {crf} -c:a copy -preset medium -loglevel {loglevel} -stats\
+            {uhd_output_args} \"{output_path}\""
+    else :
+        ffmpeg_command = f"ffmpeg {debug_shortOutput} -i \"{fpath}\" {fps_arg} -vf \"{crop_arg}{scale_arg}{pad_arg}{sharpen_arg}\"\
+            -y -pix_fmt yuv420p -c:v libx264 -crf {crf} -c:a copy -preset medium -loglevel {loglevel} \
+            {uhd_output_args} \"{output_path}\""
+        
     vid_duration = getVideDuration(fpath)
     vid_hour = vid_duration[0]
     vid_min = vid_duration[1]
     vid_sec = vid_duration[2]
     
     print(ffmpeg_command)
-    # print("====================================================================")
-    print("[INFO]\t Encoding start \"%s\" ..." % vid_name)    
+    print("====================================================================")
+    print("[INFO]\t Encoding Arguments")    
+    print("[INFO]\t Input File          : \"%s\"" % os.path.split(fpath)[1])
     print("[INFO]\t CRF                 : %d" % int(crf))
     print("[INFO]\t Video Duration      : %02d:%02d:%02d" % (vid_hour, vid_min, vid_sec))
     print("[INFO]\t Pixel format        : YUV420p")
@@ -266,54 +300,86 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
     print("[INFO]\t Ffmpeg Preset       : medium")
     print(f"[INFO]\t Cropping Info       : [W : {cropPos[0]} H : {cropPos[1]} X : {cropPos[2]} Y : {cropPos[3]}]")
     print("[INFO]\t Crop area ratio     : %.5f" %current_crop_ratio)
-    if add_letterbox :
+    if letterbox :
         print("[INFO]\t Target ratio        : %.5f" %target_ratio)
     if uhd_output :
         print("[INFO]\t Output Resolution   : 3840x2160")
     else:
         print("[INFO]\t Output Resolution   : %dx%d" %(output_width, output_height))
-    if add_sharpening :
+    if sharpening :
         print("[INFO]\t Sharpening arg      : %s" %sharpen_arg[1:])
     if fps > 0 :
         print("[INFO]\t Frame Rate          : %.2f" %fps)
+    print("[INFO]\t Field Match apply   : %s" %args.inverse_telecine)
     print("[INFO]\t Output File Name    : %s" %output_file_name)
     print("====================================================================")
-
-    # st_time = time.time()
     
     vid_index += 1
     start_time = getTime()
-    
-    '''
-    TODO : count running ffmpeg process asynch.
-    '''
-    running_process = 0
     if manual_mode:
             # Manual Mode (always cropping one by one)
             # Hold process when encoding last video 
             if vid_index == vid_num :
                 print(f"[INFO]\t Video Duration : {vid_hour:02d}:{vid_min:02d}:{vid_sec:02d}\
                     Start Time : {getTime('string')}")
-                ffmpeg_process.append(subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait())
+                ffmpeg_process.append(subprocess.Popen(ffmpeg_command, shell=False).wait())
             else :
                 ffmpeg_process.append(subprocess.Popen(ffmpeg_command, shell=False))
     else:
         # Log file mode (encoding simultaneously n videos)
         if args.multi_encoding == 0:
-            subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait()
+            if args.inverse_telecine != False:
+                subprocess.Popen(ffmpeg_ivtc_command, shell=False).wait()
+                subprocess.Popen(ffmpeg_command, shell=False).wait()
+                
+            else :
+                subprocess.Popen(ffmpeg_command, shell=False).wait()
             
         elif (vid_index % args.multi_encoding == 0) or (vid_index == vid_num):
             print(f"[INFO]\t Video Duration : {vid_hour:02d}:{vid_min:02d}:{vid_sec:02d}\
                 Start Time : {getTime('string')}")
-            p = subprocess.Popen(ffmpeg_command + ' -stats', shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
-            ffmpeg_process.append(p.pid)
-            # print(ffmpeg_process)
-            while p.poll() is None:
-                displayRemainTime(vid_duration, p.stderr, start_time)
+            
+            if args.inverse_telecine != False:
+                p = subprocess.Popen(ffmpeg_ivtc_command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
+                print(f"[INFO]\t Step 1. Field match...\t(File Path : {temp_ivtc_path})", end="\n")
+                while p.poll() is None:
+                    displayRemainTime(vid_duration, p.stderr, start_time)
+                print("",end="\n")
+                    
+                p = subprocess.Popen(ffmpeg_command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
+                print(f"[INFO]\t Step 2. Cropping...", end="\n")
+                while p.poll() is None:
+                    displayRemainTime(vid_duration, p.stderr, start_time)
+                print("\n")
+            else :
+                # p = subprocess.Popen(ffmpeg_command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
+                # ffmpeg_process.append(p.pid)
+                # while p.poll() is None:
+                #     displayRemainTime(vid_duration, p.stderr, start_time)
+                # print("\n")
+                
+                subprocess.Popen(ffmpeg_command, shell=False).wait()
+            
         else :
-            p = subprocess.Popen(ffmpeg_command, shell=False)
-            ffmpeg_process.append(p.pid)
-            running_process += 1
+            if args.inverse_telecine != False:
+                print(f"[INFO]\t Video Duration : {vid_hour:02d}:{vid_min:02d}:{vid_sec:02d}\
+                Start Time : {getTime('string')}")
+                p = subprocess.Popen(ffmpeg_ivtc_command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
+                print(f"[INFO]\t Step 1. Field match...\t(File Path : {temp_ivtc_path})", end="\n")
+                while p.poll() is None:
+                    displayRemainTime(vid_duration, p.stderr, start_time)
+                print("",end="\n")
+                    
+                p = subprocess.Popen(ffmpeg_command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
+                print(f"[INFO]\t Step 2. Cropping...", end="\n")
+                while p.poll() is None:
+                    displayRemainTime(vid_duration, p.stderr, start_time)
+                print("\n")
+            else :
+                # p = subprocess.Popen(ffmpeg_command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
+                subprocess.Popen(ffmpeg_command, shell=False)
+                
+            # ffmpeg_process.append(p.pid)
             
         retCode = 0
         
@@ -325,18 +391,18 @@ def ffmpegEncoding(args, vid_index, vid_num, cropPos, vid_name, fpath, ffmpeg_pr
     #         if vid_index == vid_num :
     #             print(f"[INFO]\t Video Duration : {vid_hour:02d}:{vid_min:02d}:{vid_sec:02d}\
     #                 Start Time : {getTime('string')}")
-    #             ffmpeg_process.append(subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait())
+    #             ffmpeg_process.append(subprocess.Popen(ffmpeg_command, shell=False).wait())
     #         else :
     #             ffmpeg_process.append(subprocess.Popen(ffmpeg_command, shell=False))
     #     else:
     #         # Log file mode (encoding simultaneously n videos)
     #         if args.multi_encoding == 0:
-    #             subprocess.Popen(ffmpeg_command + ' -stats', shell=False).wait()
+    #             subprocess.Popen(ffmpeg_command, shell=False).wait()
                 
     #         elif (vid_index % args.multi_encoding == 0) or (vid_index == vid_num):
     #             print(f"[INFO]\t Video Duration : {vid_hour:02d}:{vid_min:02d}:{vid_sec:02d}\
     #                 Start Time : {getTime('string')}")
-    #             p = subprocess.Popen(ffmpeg_command + ' -stats', shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
+    #             p = subprocess.Popen(ffmpeg_command, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding='utf-8')
     #             ffmpeg_process.append(p.pid)
     #             while p.poll() is None:
     #                 displayRemainTime(vid_duration, p.stderr, start_time)

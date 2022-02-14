@@ -55,7 +55,7 @@ def displayRemainTime(vid_duration, ffmpeg_stream, start_time):
         eta = (100 - current_percentage) / encoding_speed
         eta_time = datetime.datetime.now() + datetime.timedelta(seconds=eta)
         eta_time = eta_time.strftime('[ETA : %Y-%m-%d %H:%M:%S]')
-        print(f"[INFO]\t now encoding ... {eta_time} [{current_percentage:.2f}%] [Speed : {encoding_speed:.2f} %/s]", end='\r')
+        print(f"[INFO]\t now processing ... {eta_time} [{current_percentage:.2f}%] [Speed : {encoding_speed:.2f} %/s]", end='\r')
     
 
 def resizeCropInfo(key, cropPos, frame_width, frame_height):
@@ -151,10 +151,24 @@ def parseLog(log_path, edit_mode, manual_mode, scale):
     cropPos = []
     
     if not os.path.exists(log_path):
-        print(f"[INFO]\t Can`t find log file. [{log_path}]")
-        manual_mode = True
-        edit_mode = False
-    else :
+        if log_path.find('_avs') > 0 :
+            avs_log_path = log_path.split(sep='_avs')
+            avs_log_path = avs_log_path[0] + avs_log_path[1]
+            if os.path.exists(avs_log_path):
+                print(f"[INFO]\t Using log file for avs input. \
+                    [{os.path.basename(log_path)} => {os.path.basename(avs_log_path)}]")
+                log_path = avs_log_path
+            else :
+                print(f"[INFO]\t Can`t find log file for avs input. [{avs_log_path}]")
+                manual_mode = True
+                edit_mode = False
+        else :
+            print(f"[INFO]\t Can`t find log file. [{log_path}]")
+            manual_mode = True
+            edit_mode = False
+
+            
+    if not manual_mode :
         print(f"[INFO]\t Loading log file... [{log_path}]")
         try :
             f = open(log_path, "r")

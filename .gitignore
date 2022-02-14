@@ -5,3 +5,4 @@ input/*
 logs/*
 out/*
 test_video/*
+capture_image/*
